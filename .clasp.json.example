@@ -1,17 +1,16 @@
 {
-  "scriptId": "<YOUR_APPS_SCRIPT_PROJECT_ID>",
+  "scriptId": "<BOUND_APPS_SCRIPT_PROJECT_ID>",
   "rootDir": ".",
   "fileExtension": "js",
   "filePushOrder": [
     "src/config/Config.js",
-    "src/config/Schema.js",
-    "src/utils/Logger.js",
     "src/utils/DateUtils.js",
-    "src/utils/Security.js",
     "src/utils/Validator.js",
     "src/utils/CacheManager.js",
-    "src/repository/BaseRepository.js",
     "src/repository/Database.js",
-    "src/setup/SeedData.js"
+    "src/repository/ReportRepository.js",
+    "src/services/FilterService.js",
+    "src/services/StatisticsService.js",
+    "src/Code.js"
   ]
 }

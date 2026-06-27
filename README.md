@@ -1,106 +1,81 @@
-# DKP Arizalarni Boshqaruv Tizimi
+# DKP Hisobot Tahlili
 
-> Davlat kadastri uchun **Google Apps Script Web App** asosida ishlab chiqilgan professional analitik platforma.
+> Bitta **Google Sheets** fayli ichida, **Google Apps Script** bilan integratsiyalashgan tahlil muhiti.
 
-Platforma har kuni keladigan standart Excel hisobotini avtomatik import qiladi, barcha biznes
-qoidalari asosida qayta ishlaydi, muddatlarni ish kuni hisob-kitobiga ko'ra hisoblaydi,
-statistikalarni shakllantiradi va rollarga asoslangan zamonaviy Dashboard taqdim etadi.
+Tizimning yagona maqsadi — varaqdagi **tayyor hisobot jadvalini** qulay **filterlash** va
+**statistikani** (KPI, grafiklar, reyting, jadval) ko'rsatuvchi interfeys taqdim etish.
+
+Hisobot ustunlari **avtomatik aniqlanadi** (qat'iy sxema yo'q), shuning uchun tizim deyarli
+istalgan ustunli tayyor hisobot bilan ishlaydi.
 
 ---
 
 ## Mundarija
 
-- [Texnologiyalar](#texnologiyalar)
-- [Asosiy tamoyillar](#asosiy-tamoyillar)
+- [Qanday ishlaydi](#qanday-ishlaydi)
+- [Imkoniyatlar](#imkoniyatlar)
 - [Arxitektura](#arxitektura)
 - [Loyiha tuzilmasi](#loyiha-tuzilmasi)
-- [Ma'lumotlar bazasi (Google Sheets)](#malumotlar-bazasi-google-sheets)
-- [Rollar va ruxsatlar](#rollar-va-ruxsatlar)
-- [Biznes kalendar (ish kuni hisobi)](#biznes-kalendar-ish-kuni-hisobi)
-- [SLA va rang holati](#sla-va-rang-holati)
-- [O'rnatish va deploy (Google Apps Script)](#ornatish-va-deploy-google-apps-script)
+- [Ustunlarni avtomatik aniqlash](#ustunlarni-avtomatik-aniqlash)
+- [O'rnatish (Apps Script + Google Sheets)](#ornatish-apps-script--google-sheets)
+- [Sozlash](#sozlash)
 - [Lokal ishlab chiqish (lint va test)](#lokal-ishlab-chiqish-lint-va-test)
-- [Xavfsizlik](#xavfsizlik)
-- [Optimizatsiya (50 000+ yozuv)](#optimizatsiya-50000-yozuv)
-- [Loyiha holati va Roadmap](#loyiha-holati-va-roadmap)
-- [Litsenziya](#litsenziya)
+- [Optimizatsiya](#optimizatsiya)
 
 ---
 
-## Texnologiyalar
+## Qanday ishlaydi
 
-| Qatlam | Texnologiya |
-|--------|-------------|
-| Runtime | **Google Apps Script (V8)** |
-| Web ilova | **Google Apps Script Web App** (`HtmlService`, `doGet`) |
-| Frontend | HTML5, CSS3, JavaScript ES2023 |
-| Ma'lumotlar bazasi | **Google Sheets** |
-| Grafiklar | Google Charts |
-| Server hisob-kitoblari | JavaScript (Apps Script server-side) |
-| Tooling | clasp, ESLint, Node test runner |
+1. Apps Script loyihasi Google Sheets fayliga **bog'langan (bound)**.
+2. Faylni ochganda menyuga **📊 DKP Tahlil → Tahlil panelini ochish** qo'shiladi.
+3. Panel (modal dialog) ochiladi: server hisobot varag'ini **bir marta o'qiydi**, ustun turlarini
+   aniqlaydi va filterlash uchun interfeys quradi.
+4. Foydalanuvchi filterlaydi/qidiradi → server **server tomonida** filterlab, statistika va
+   grafiklar uchun ma'lumotni qaytaradi.
 
-> **Eslatma:** Tizim Google Apps Script Web App sifatida ishlaydi. Kodning bajarilishi
-> Google serverlarida (`script.google.com`) amalga oshiriladi; lokal muhitda faqat **lint**
-> va sof mantiqiy funksiyalar uchun **unit testlar** yuritiladi.
+```
+  Google Sheets (tayyor hisobot)
+        │  (bound)
+        ▼
+  Apps Script  ──onOpen──▶  Menyu  ──▶  Modal dialog (Index.html)
+        │                                     │  google.script.run
+        └────────── server API ◀──────────────┘
+           getInitialState() / runQuery(payload)
+```
 
 ---
 
-## Asosiy tamoyillar
+## Imkoniyatlar
 
-- ✅ **Standart Excel fayli — yagona ma'lumot manbai.**
-- ✅ **Barcha hisob-kitoblar Apps Script server tomonida** bajariladi.
-- ✅ **Google Sheets ichida formula ishlatilmaydi** — `COUNTIFS`, `SUMIFS`, `VLOOKUP`, `INDEX`,
-  `MATCH`, `FILTER`, `QUERY` kabilar **mutlaqo qo'llanilmaydi**. Barcha hisob-kitoblar JavaScript
-  orqali, in-memory `Map`/`Object` indekslari yordamida bajariladi.
-- ✅ **Server tomonida ruxsat (permission) tekshiruvi majburiy** — frontenddagi yashirish bilan
-  cheklanilmaydi.
-- ✅ **Modulli arxitektura**: MVC, Service Layer, Repository Layer, Utils Layer.
-- ✅ **SOLID, DRY, KISS, Clean Code** tamoyillari; **Magic Number** ishlatilmaydi (barchasi `CONFIG`).
+- **Cascading filterlar** — har bir kategoriya ustuni uchun ko'p tanlovli (checkbox) dropdown;
+  variantlar boshqa faol filterlarga moslab yangilanadi.
+- **Sana oralig'i** filtri (ixtiyoriy sana ustuni bo'yicha).
+- **Raqamli oraliq** (min/max) filtrlari har bir raqamli ustun uchun.
+- **Tezkor global qidiruv** (debounce bilan).
+- **KPI kartalar** — jami yozuvlar va har bir raqamli ustun bo'yicha yig'indi/o'rtacha.
+- **Grafiklar** (Google Charts): doiraviy (ulush), ustunli (o'lcham bo'yicha), maydon/chiziqli (trend).
+- **Top 10 reyting** tanlangan o'lcham bo'yicha.
+- **Sahifalangan, saralanadigan jadval** (server-side pagination & sort).
+- **Material dizayn**, responsive layout, loading animatsiya.
 
 ---
 
 ## Arxitektura
 
-Tizim qatlamli (layered) arxitekturaga asoslanadi. Pastdan yuqoriga bog'liqlik yo'nalishi:
+Qatlamli, qat'iy bog'liqlik yo'nalishi bilan. Barcha hisob-kitob **server tomonida** (JavaScript),
+Google Sheets ichida **formula ishlatilmaydi**.
 
-```
-            ┌──────────────────────────────────────────┐
-            │   UI (HtmlService: HTML + CSS + JS)        │   <- Web App ko'rinishi
-            └──────────────────────────────────────────┘
-                              │ google.script.run
-            ┌──────────────────────────────────────────┐
-            │   Controllers (doGet, API endpointlar)     │   <- so'rovlarni qabul qilish
-            └──────────────────────────────────────────┘
-                              │
-            ┌──────────────────────────────────────────┐
-            │   Services (Auth, Import, BusinessLogic,    │   <- biznes mantiq
-            │   Statistics, Finance, Export)              │
-            └──────────────────────────────────────────┘
-                              │
-            ┌──────────────────────────────────────────┐
-            │   Repository (BaseRepository, Database)     │   <- ma'lumotga kirish
-            └──────────────────────────────────────────┘
-                              │
-            ┌──────────────────────────────────────────┐
-            │   Utils (DateUtils, Security, Validator,    │   <- qayta ishlatiluvchi yordamchilar
-            │   CacheManager, Logger)                     │
-            └──────────────────────────────────────────┘
-                              │
-            ┌──────────────────────────────────────────┐
-            │   Config (CONFIG) + Schema (SCHEMA)         │   <- yagona konfiguratsiya manbai
-            └──────────────────────────────────────────┘
-```
+| Qatlam | Fayl | Vazifa |
+|--------|------|--------|
+| **Config** | `src/config/Config.js` | Deep-frozen `CONFIG` — yagona konfiguratsiya manbai |
+| **Utils** | `src/utils/DateUtils.js`, `Validator.js` | Ish-kuni kalendari, input validatsiya (sof funksiyalar) |
+| **Repository** | `src/repository/Database.js`, `ReportRepository.js` | Bound spreadsheet + hisobotni dinamik o'qish/turlarni aniqlash |
+| **Service** | `src/services/FilterService.js`, `StatisticsService.js` | Server-side filterlash va agregatsiya (sof funksiyalar) |
+| **Controller** | `src/Code.js` | `onOpen`, dialog, server API (`getInitialState`, `runQuery`) |
+| **UI** | `Index.html` | Filtrlar + KPI + grafiklar + jadval (HtmlService) |
 
-Har bir server moduli fayl oxirida `typeof module` himoyasiga ega:
-
-```js
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { ... };
-}
-```
-
-Bu Apps Script global scope'ida zararsiz (`module` aniqlanmagan), lekin Node muhitida sof
-mantiqni **unit test** qilish imkonini beradi.
+> Sof mantiqiy modullar (kalendar, filter, statistika, ustun aniqlash) Node muhitida **unit test**
+> qilinadi; har bir server fayli `typeof module` himoyasiga ega.
 
 ---
 
@@ -108,293 +83,107 @@ mantiqni **unit test** qilish imkonini beradi.
 
 ```
 DKP_Arizalarni_boshqaruv_tizimi/
-├── appsscript.json              # Apps Script manifesti (V8, Asia/Tashkent, Web App)
-├── .clasp.json.example          # clasp konfiguratsiyasi namunasi (scriptId shu yerda)
+├── appsscript.json              # Apps Script manifesti (V8, Asia/Tashkent)
+├── .clasp.json.example          # clasp konfiguratsiyasi namunasi
 ├── eslint.config.js             # ESLint (flat config)
 ├── package.json                 # lint/test/push skriptlari
-├── .gitignore
-├── README.md
+├── Index.html                   # Dashboard UI (filtrlar + statistika)
 │
 ├── src/
+│   ├── Code.js                  # Controller: menyu, dialog, server API
 │   ├── config/
-│   │   ├── Config.js            # CONFIG — barcha konstanta, enum, sheet nomlari, SLA, parametrlar
-│   │   └── Schema.js            # SCHEMA — har bir sheet ustunlari + header/index helperlari
-│   │
+│   │   └── Config.js            # CONFIG — konstanta va parametrlar
 │   ├── utils/
-│   │   ├── DateUtils.js         # Biznes kalendar (ish kuni hisobi)
-│   │   ├── Security.js          # Hash, token, escape, sanitize, validatsiya
-│   │   ├── Validator.js         # Input validatsiya (PNFL, kadastr, son, sana, enum)
-│   │   ├── CacheManager.js      # CacheService + gzip JSON kesh
-│   │   └── Logger.js            # AppLogger — LOGIN_LOG / ACTION_LOG / IMPORT_LOG
-│   │
-│   └── repository/
-│       ├── Database.js          # Spreadsheet bootstrap, setupAll(), withLock()
-│       └── BaseRepository.js    # Schema-driven CRUD (bitta getValues/setValues, Map index)
-│
-│   └── setup/
-│       └── SeedData.js          # seedSampleData() — sheetlarni yaratib demo data bilan to'ldiradi
-│
-├── samples/
-│   └── DKP_Namuna.xlsx          # Drive'ga yuklash uchun tayyor namuna (16 tab + demo data)
-│
-├── tools/
-│   └── build_sample_xlsx.py     # Namuna .xlsx ni qayta yaratuvchi skript (dependency-free)
+│   │   ├── DateUtils.js         # Ish-kuni kalendari (SLA/sana mantiqi)
+│   │   └── Validator.js         # Input validatsiya
+│   ├── repository/
+│   │   ├── Database.js          # Bound (aktiv) spreadsheet kirish
+│   │   └── ReportRepository.js  # Hisobotni dinamik o'qish + turlarni aniqlash
+│   └── services/
+│       ├── FilterService.js     # Server-side filterlash (cascading)
+│       └── StatisticsService.js # KPI, group-by, top-N, time series
 │
 └── test/                        # Node unit testlar (sof mantiq)
     ├── dateutils.test.js
-    ├── security.test.js
     ├── validator.test.js
-    └── repository.test.js
+    ├── reportrepository.test.js
+    ├── filterservice.test.js
+    └── statisticsservice.test.js
 ```
 
-> Apps Script'da papkalar bo'lmaydi — `clasp push` fayllarni `src/config/Config` kabi to'liq yo'l
-> bilan nomlaydi va yuklaydi. `.clasp.json` ichidagi `filePushOrder` yuklash tartibini ta'minlaydi.
+---
+
+## Ustunlarni avtomatik aniqlash
+
+`ReportRepository` hisobot varag'ining birinchi qatorini sarlavha sifatida oladi va har bir
+ustunning turini **qiymatlarni namuna olish** orqali aniqlaydi:
+
+- **number** → KPI va agregatsiya uchun *ko'rsatkich (measure)*;
+- **date** → trend grafigi va sana oralig'i filtri uchun;
+- **string** → *o'lcham (dimension)*:
+  - agar noyob qiymatlar soni `MAX_DIMENSION_CARDINALITY` dan kam bo'lsa → filtr dropdown;
+  - aks holda → faqat global qidiruvga kiradi.
+
+Shuning uchun maxsus sxema talab qilinmaydi — ustunlar o'zgarsa ham tizim moslashadi.
 
 ---
 
-## Ma'lumotlar bazasi (Google Sheets)
-
-Tizim 16 ta sheet (jadval) bilan ishlaydi. Har bir jadvalning ustunlari `src/config/Schema.js`
-ichida deklarativ tarzda belgilangan, kod hech qachon ustun pozitsiyasini "qotirib" yozmaydi.
-
-| Sheet | Vazifasi |
-|-------|----------|
-| `LOGIN` | Foydalanuvchilar, parol hash + salt, status, sessiya bilan bog'liq maydonlar |
-| `EMPLOYEES` | Xodimlar (muhandislar), viloyat/tuman/filial taqsimoti |
-| `HOLIDAYS` | Bayram kunlari (fixed va har yili takrorlanuvchi) |
-| `SERVICE_RULES` | Xizmat turi bo'yicha muddat (ish kuni) va narx |
-| `AREA_RULES` | Viloyat/Tuman/Filial hududiy qoidalari |
-| `SETTINGS` | Tizim parametrlari (key/value) |
-| `RAW_DATA` | Import qilingan Excel ma'lumotining xom nusxasi (JSON) |
-| `DATA` | Qayta ishlangan arizalar (analitik fakt jadvali) |
-| `STATISTICS` | Hisoblangan statistik ko'rsatkichlar |
-| `MONTHLY_STATS` | Oylik kesimdagi statistika |
-| `FINANCE` | Moliyaviy ko'rsatkichlar (billed/paid/pending) |
-| `EXPORT_QUEUE` | Eksport navbati (background queue) |
-| `LOGIN_LOG` | Kirish urinishlari jurnali |
-| `ACTION_LOG` | Foydalanuvchi amallari va xatoliklar jurnali |
-| `IMPORT_LOG` | Import jarayoni jurnali (transaction holatlari) |
-| `BACKUP` | Har import oldidan zaxira nusxa (rollback uchun) |
-
-Barcha jadvallarni bir marta yaratish uchun: `Database.setupAll()`.
-
----
-
-## Rollar va ruxsatlar
-
-| Rol | Kod | Daraja | Ko'rish doirasi |
-|-----|-----|--------|-----------------|
-| Administrator | `ADMIN` | 0 | Barcha ma'lumotlar |
-| Viloyat | `REGION` | 1 | O'z viloyati doirasidagi ma'lumotlar |
-| Tuman (Bosh muhandis) | `DISTRICT` | 2 | O'z tumani doirasidagi ma'lumotlar |
-| Kadastr muhandisi | `ENGINEER` | 3 | Faqat o'ziga biriktirilgan arizalar |
-
-Har bir foydalanuvchi **faqat o'z vakolati doirasidagi** ma'lumotlarni ko'radi. Ruxsat tekshiruvi
-**server tomonida** (Service qatlamida) majburiy amalga oshiriladi.
-
----
-
-## Biznes kalendar (ish kuni hisobi)
-
-Barcha muddat hisob-kitoblari `src/utils/DateUtils.js` orqali o'tadi. Qoidalar:
-
-- **Shanba** (`getDay() === 6`) — ish kuni emas.
-- **Yakshanba** (`getDay() === 0`) — ish kuni emas.
-- **`HOLIDAYS` jadvalidagi** har qanday sana — ish kuni emas (fixed yoki takrorlanuvchi).
-
-Funksiyalar:
-
-| Funksiya | Tavsifi |
-|----------|---------|
-| `isWorkingDay(date, holidays)` | Sana ish kunimi? |
-| `nextWorkingDay(date, holidays)` | Berilgan sanadan keyingi navbatdagi ish kuni |
-| `addWorkingDays(start, n, holidays)` | `n` ta ish kunini qo'shadi (boshlang'ich kun hisobga olinmaydi; manfiy `n` orqaga) |
-| `workingDaysBetween(a, b, holidays)` | Ikki sana orasidagi ish kunlari (boshini chiqarib, oxirini kiritib) |
-| `remainingWorkingDays(from, due, holidays)` | Qolgan ish kunlari (muddat o'tgan bo'lsa **manfiy**) |
-| `buildHolidaySet(rows)` | `HOLIDAYS` qatorlaridan tez qidiruv uchun `Set` tuzadi |
-
----
-
-## SLA va rang holati
-
-Har bir ariza uchun qolgan vaqt foizi (`slaPercent`) hisoblanadi va rang holati beriladi:
-
-| Holat | Rang | Shart (qolgan vaqt %) |
-|-------|------|------------------------|
-| 🟢 GREEN | `#2e7d32` | ≥ 60% |
-| 🟡 YELLOW | `#f9a825` | ≥ 40% |
-| 🟠 ORANGE | `#ef6c00` | ≥ 20% |
-| 🔴 RED | `#c62828` | ≥ 0% |
-| ⚫ BLACK | `#000000` | < 0% (muddati o'tgan) |
-
-Rang chegaralari `CONFIG.SLA.THRESHOLDS` ichida saqlanadi.
-
----
-
-## O'rnatish va deploy (Google Apps Script)
-
-### 0. Dastlabki Google Sheets namunasi (Drive'ga yuklash uchun)
-
-`samples/DKP_Namuna.xlsx` — barcha **16 ta tab**, to'g'ri header'lar va real demo
-ma'lumotlar bilan tayyor namuna fayl.
-
-1. Faylni [Google Drive](https://drive.google.com/drive) ga yuklang.
-2. O'ng tugma → **Open with → Google Sheets** (yoki Drive sozlamasida "Convert uploads"
-   yoqilgan bo'lsa avtomatik Google Sheets'ga aylanadi).
-3. Hosil bo'lgan Google Sheets faylining ID sini (`/d/<ID>/edit`) `DKP_SPREADSHEET_ID`
-   Script Property sifatida kiriting (4-bandga qarang).
-
-Namunadagi **demo hisoblar** (parollar):
-
-| Username | Parol | Rol |
-|----------|-------|-----|
-| `admin` | `Admin@123` | ADMIN |
-| `region` | `Region@123` | REGION |
-| `district` | `District@123` | DISTRICT |
-| `engineer` | `Engineer@123` | ENGINEER |
-
-> Parol hash'lari `Security.hashPassword` algoritmi (`SHA-256(salt + ':' + parol)`) bilan
-> hisoblangan, shuning uchun bu hisoblar AuthService tayyor bo'lgach to'g'ridan-to'g'ri ishlaydi.
-> **Birinchi kirishdan so'ng parollarni almashtirish tavsiya etiladi** (`MustChangePassword = TRUE`).
-
-Namunani qayta yaratish (ma'lumotni o'zgartirgandan keyin):
-
-```bash
-python3 tools/build_sample_xlsx.py   # -> samples/DKP_Namuna.xlsx
-```
-
-**Muqobil yo'l (GAS-native):** Excel yuklash o'rniga, kodni deploy qilib bo'lgach Apps Script
-muharririda `seedSampleData()` funksiyasini bir marta ishga tushiring — u barcha sheetlarni yaratadi
-va aynan shu demo ma'lumotlar bilan to'ldiradi (`src/setup/SeedData.js`).
+## O'rnatish (Apps Script + Google Sheets)
 
 ### 1. Talablar
-- [Node.js](https://nodejs.org/) (lokal tooling uchun)
+- [Node.js](https://nodejs.org/) (lokal lint/test uchun)
 - [clasp](https://github.com/google/clasp): `npm install -g @google/clasp`
-- Google hisob qaydnomasi va yangi yoki mavjud Google Sheets fayli
 
-### 2. clasp orqali ulanish
+### 2. Hisobot faylini tayyorlash
+Tayyor hisobot jadvali joylashgan Google Sheets faylini oching (1-qator — sarlavhalar).
 
-```bash
-# Google hisobiga kirish
-clasp login
-
-# Yangi Apps Script loyihasini Google Sheets'ga bog'lab yaratish (yoki mavjudini ulash)
-clasp create --type sheets --title "DKP Arizalarni Boshqaruv Tizimi"
-```
-
-`.clasp.json.example` faylidan nusxa oling va `scriptId` ni kiriting:
+### 3. Bog'langan Apps Script loyihasini ulash
+Sheets ichida **Extensions → Apps Script** orqali bound loyiha oching va uning `scriptId` sini oling
+(Project Settings’dan). So'ng:
 
 ```bash
 cp .clasp.json.example .clasp.json
-# .clasp.json ichidagi scriptId ni o'z loyihangiznikiga almashtiring
+# .clasp.json ichidagi scriptId ni bound loyihangiznikiga almashtiring
+clasp push        # yoki: npm run push
 ```
 
-### 3. Kodni yuklash
+### 4. Ishga tushirish
+Sheets faylini qayta yuklang → menyuda **📊 DKP Tahlil → Tahlil panelini ochish**.
 
-```bash
-clasp push          # yoki: npm run push
-```
+---
 
-### 4. Sozlash
+## Sozlash
 
-Apps Script muharririda **Script Properties** ga spreadsheet ID sini qo'shing:
+Asosiy sozlamalar `src/config/Config.js` → `CONFIG` ichida:
 
-| Property | Qiymat |
-|----------|--------|
-| `DKP_SPREADSHEET_ID` | Google Sheets fayli ID si |
-
-So'ngra **bir marta** quyidagini ishga tushiring (barcha sheetlarni yaratadi):
-
-```js
-Database.setupAll();
-```
-
-### 5. Web App sifatida deploy qilish
-
-Apps Script muharririda: **Deploy → New deployment → Web app**.
-
-`appsscript.json` da quyidagi sozlamalar oldindan belgilangan:
-
-```json
-{
-  "timeZone": "Asia/Tashkent",
-  "runtimeVersion": "V8",
-  "webapp": {
-    "executeAs": "USER_DEPLOYING",
-    "access": "ANYONE_ANONYMOUS"
-  }
-}
-```
-
-Deploy tugagach Web App URL hosil bo'ladi — foydalanuvchilar shu havola orqali tizimga kiradi.
+| Sozlama | Tavsifi |
+|---------|---------|
+| `REPORT.SHEET_NAME` | Hisobot varag'i nomi. `''` bo'lsa — **aktiv varaq** ishlatiladi |
+| `REPORT.HEADER_ROW` | Sarlavha qatori raqami (standart: 1) |
+| `REPORT.TYPE_SAMPLE_ROWS` | Tur aniqlash uchun namuna olinadigan qatorlar soni |
+| `REPORT.MAX_DIMENSION_CARDINALITY` | Ustun dropdownga aylanishi uchun maks. noyob qiymatlar |
+| `PERFORMANCE.PAGE_SIZE` | Jadval sahifasidagi yozuvlar soni |
+| `UI.DIALOG_WIDTH/HEIGHT` | Dialog o'lchami |
+| `SLA.*`, `CALENDAR.*` | SLA ranglari va ish-kuni qoidalari (ixtiyoriy tahlil uchun) |
 
 ---
 
 ## Lokal ishlab chiqish (lint va test)
 
-> Kod Google serverlarida ishlaydi, ammo sof mantiqiy modullar (kalendar, security, validator)
-> lokal muhitda tekshiriladi.
-
 ```bash
-# Linting (ESLint)
-npm run lint
-
-# Unit testlar (Node built-in test runner)
-npm test
+npm run lint    # ESLint
+npm test        # Node unit testlar
 ```
 
-Joriy holatda **22 ta test** mavjud va barchasi muvaffaqiyatli o'tadi; ESLint **0 ta muammo**
-qaytaradi.
+Joriy holatda **34 ta test** mavjud va barchasi o'tadi; ESLint **0 ta muammo** qaytaradi.
 
 ---
 
-## Xavfsizlik
+## Optimizatsiya
 
-- **Parol hash**: salt + `SHA-256` (`Security.hashPassword`).
-- **Sessiya tokeni** va **CSRF tokeni** generatsiyasi.
-- **Server validatsiyasi** va **rol tekshiruvi** — majburiy.
-- **HTML escape** (`Security.escapeHtml`) — XSS oldini olish.
-- **Input sanitization** (`Security.sanitizeText`) — boshqaruv belgilarini tozalash, uzunlik chegarasi.
-- **Parol siyosati** (`Security.validatePasswordStrength`) — minimal uzunlik + harf/raqam.
-- **Bloklash**: muvaffaqiyatsiz kirishlar soni va vaqtinchalik lockout (`CONFIG.SECURITY`).
-
----
-
-## Optimizatsiya (50 000+ yozuv)
-
-Tizim katta hajmdagi ma'lumot bilan barqaror ishlashi uchun qat'iy qoidalar joriy etilgan:
-
-- `SpreadsheetApp` chaqiriqlari **minimal**; sheet va spreadsheet handle'lari memoizatsiya qilinadi.
-- `getValues()` — **bitta** chaqiriq; `setValues()` — **bitta** chaqiriq (`BaseRepository`).
-- **Cell-by-cell yozish taqiqlanadi** (faqat jurnal qatorlari bundan mustasno).
-- **Batch / Array processing**, in-memory **`Map` indekslari** (nested loop o'rniga).
-- **Server-side filtering** (client-side emas).
-- **`CacheService`** (gzip bilan), **`PropertiesService`**, **`LockService`**.
-- Reja: Pagination, Lazy Loading, Virtual Table, Debounce Search, Chunk/Async processing,
-  Trigger Queue (eksport uchun).
-
----
-
-## Loyiha holati va Roadmap
-
-| Faza | Tarkib | Holat |
-|------|--------|-------|
-| **1. Foundation** | Config, Schema, Biznes kalendar, Security, Repository, Utils, testlar | ✅ **Bajarildi** |
-| 2. Auth | `AuthService`, login/logout, sessiya, parol almashtirish | ⏳ Rejada |
-| 3. Import | Backup → archive → load → process → stats, transaction + rollback | ⏳ Rejada |
-| 4. Business Logic | Kalendar + service/area qoidalari → status, muddat, SLA %/rang | ⏳ Rejada |
-| 5. Statistics + Finance | Statistik va moliyaviy ko'rsatkichlar | ⏳ Rejada |
-| 6. Dashboard | Rollarga oid dashboardlar, KPI, Charts, Top 10, Ranking | ⏳ Rejada |
-| 7. Filtrlar | Cascading filterlar (viloyat→tuman→filial...) | ⏳ Rejada |
-| 8. Export | Excel/PDF/CSV/Print, background queue | ⏳ Rejada |
-| 9. UI | Material Design, Dark/Light, responsive, toast, shortcuts | ⏳ Rejada |
-
-> ⚠️ **Muhim:** Import va Business Logic fazalari standart Excel hisobotining **aniq ustun
-> tuzilmasiga** bog'liq. `DATA` jadvalidagi joriy ustunlar — vaqtinchalik (placeholder) bo'lib,
-> haqiqiy Excel header'lari bilan moslashtirilishi kerak.
-
----
-
-## Litsenziya
-
-UNLICENSED — ichki foydalanish uchun (Davlat kadastri).
+- Hisobot **bitta `getValues()`** chaqirig'i bilan o'qiladi (50 000+ qator uchun mos).
+- Filterlash, agregatsiya va saralash **in-memory** `Map`/massivlar bilan bajariladi
+  (Google Sheets formulalarisiz).
+- Jadval **server-side pagination** orqali sahifalanadi — katta natijalar brauzerga to'liq yuborilmaydi.
+- Qidiruv **debounce** bilan; dialog uchun ma'lumotlar faqat kerakli hajmda uzatiladi.
+- `LockService` orqali bir vaqtdagi murojaatlar tartibga solinadi.

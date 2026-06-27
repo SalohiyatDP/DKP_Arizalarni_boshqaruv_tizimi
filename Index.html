@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DKP Hisobot Tahlili</title>
+  <style>
+    :root {
+      --bg: #f1f3f4; --panel: #ffffff; --ink: #202124; --muted: #5f6368;
+      --line: #e0e0e0; --brand: #1a73e8; --brand-dark: #1558b0; --radius: 12px;
+      --shadow: 0 1px 3px rgba(60,64,67,.18), 0 1px 2px rgba(60,64,67,.1);
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body {
+      font-family: 'Google Sans', Roboto, Arial, sans-serif;
+      background: var(--bg); color: var(--ink); font-size: 13px;
+    }
+    .app { display: flex; flex-direction: column; height: 100vh; }
+    .topbar {
+      display: flex; align-items: center; gap: 14px; padding: 10px 16px;
+      background: var(--brand); color: #fff; box-shadow: var(--shadow); z-index: 5;
+    }
+    .topbar h1 { font-size: 16px; margin: 0; font-weight: 500; }
+    .topbar .meta { font-size: 12px; opacity: .9; }
+    .topbar .spacer { flex: 1; }
+    .search {
+      display: flex; align-items: center; background: rgba(255,255,255,.18);
+      border-radius: 20px; padding: 6px 12px;
+    }
+    .search input {
+      border: 0; background: transparent; color: #fff; outline: none;
+      width: 220px; font-size: 13px;
+    }
+    .search input::placeholder { color: rgba(255,255,255,.8); }
+    .btn {
+      border: 0; border-radius: 8px; padding: 8px 14px; cursor: pointer;
+      font-size: 13px; background: #fff; color: var(--brand); font-weight: 500;
+    }
+    .btn.ghost { background: rgba(255,255,255,.18); color: #fff; }
+    .body { display: flex; flex: 1; min-height: 0; }
+    .sidebar {
+      width: 290px; background: var(--panel); border-right: 1px solid var(--line);
+      overflow-y: auto; padding: 12px; flex-shrink: 0;
+    }
+    .main { flex: 1; overflow-y: auto; padding: 16px; min-width: 0; }
+    .section { margin-bottom: 16px; }
+    .section h3 {
+      font-size: 11px; text-transform: uppercase; letter-spacing: .5px;
+      color: var(--muted); margin: 0 0 8px;
+    }
+    .field { margin-bottom: 10px; }
+    .field label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 3px; }
+    select, input[type=date], input[type=number], input[type=text] {
+      width: 100%; padding: 7px 8px; border: 1px solid var(--line);
+      border-radius: 8px; font-size: 13px; background: #fff; outline: none;
+    }
+    select:focus, input:focus { border-color: var(--brand); }
+    .row2 { display: flex; gap: 6px; }
+    .row2 > * { flex: 1; }
+    /* multi-select dropdown */
+    .ms { position: relative; margin-bottom: 10px; }
+    .ms-btn {
+      width: 100%; text-align: left; padding: 7px 8px; border: 1px solid var(--line);
+      border-radius: 8px; background: #fff; cursor: pointer; font-size: 13px;
+      display: flex; justify-content: space-between; align-items: center; gap: 6px;
+    }
+    .ms-btn .cnt {
+      background: var(--brand); color: #fff; border-radius: 10px; padding: 0 7px;
+      font-size: 11px; min-width: 18px; text-align: center;
+    }
+    .ms-panel {
+      display: none; position: absolute; z-index: 20; left: 0; right: 0; top: 100%;
+      margin-top: 4px; background: #fff; border: 1px solid var(--line);
+      border-radius: 8px; box-shadow: var(--shadow); max-height: 240px; overflow-y: auto;
+    }
+    .ms-panel.open { display: block; }
+    .ms-search { padding: 6px; position: sticky; top: 0; background: #fff; border-bottom: 1px solid var(--line); }
+    .ms-search input { padding: 5px 7px; }
+    .ms-opt { display: flex; align-items: center; gap: 8px; padding: 6px 10px; cursor: pointer; }
+    .ms-opt:hover { background: #f5f7fb; }
+    .ms-opt input { width: auto; }
+    .ms-opt span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    /* KPI cards */
+    .kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+    .kpi {
+      background: var(--panel); border-radius: var(--radius); padding: 14px 16px;
+      box-shadow: var(--shadow); border-left: 4px solid var(--brand);
+    }
+    .kpi .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .3px; }
+    .kpi .value { font-size: 24px; font-weight: 600; margin-top: 4px; }
+    .kpi .sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    /* cards / charts */
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
+    .card { background: var(--panel); border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px; }
+    .card h2 { font-size: 14px; margin: 0 0 10px; font-weight: 500; }
+    .card.wide { grid-column: 1 / -1; }
+    .chart { width: 100%; height: 300px; }
+    .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin-bottom: 12px;
+      background: var(--panel); padding: 12px; border-radius: var(--radius); box-shadow: var(--shadow); }
+    .controls .field { margin: 0; min-width: 150px; }
+    /* ranking */
+    .rank-item { display: flex; align-items: center; gap: 8px; padding: 5px 0; border-bottom: 1px solid #f1f1f1; }
+    .rank-item .pos { width: 22px; height: 22px; border-radius: 50%; background: var(--brand); color: #fff;
+      display: flex; align-items: center; justify-content: center; font-size: 11px; flex-shrink: 0; }
+    .rank-item .nm { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .rank-item .vl { font-weight: 600; }
+    /* table */
+    .tablewrap { overflow-x: auto; }
+    table { border-collapse: collapse; width: 100%; font-size: 12px; }
+    th, td { padding: 7px 10px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+    th { position: sticky; top: 0; background: #f8f9fa; cursor: pointer; user-select: none; font-weight: 500; }
+    th:hover { background: #eef1f5; }
+    tbody tr:hover { background: #f8fbff; }
+    .pager { display: flex; align-items: center; gap: 10px; justify-content: flex-end; margin-top: 10px; }
+    .pager button { border: 1px solid var(--line); background: #fff; border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+    .pager button:disabled { opacity: .5; cursor: default; }
+    /* overlay */
+    .overlay { position: fixed; inset: 0; background: rgba(255,255,255,.6); display: none;
+      align-items: center; justify-content: center; z-index: 50; }
+    .overlay.on { display: flex; }
+    .spinner { width: 38px; height: 38px; border: 4px solid #d0d7e2; border-top-color: var(--brand);
+      border-radius: 50%; animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .empty { color: var(--muted); text-align: center; padding: 30px; }
+    .pill { display: inline-block; background: #e8f0fe; color: var(--brand-dark); border-radius: 10px;
+      padding: 1px 8px; font-size: 11px; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="topbar">
+      <h1 id="title">DKP Hisobot Tahlili</h1>
+      <span class="meta" id="sheetMeta"></span>
+      <span class="spacer"></span>
+      <div class="search">
+        <span>🔎</span>
+        <input id="globalSearch" type="text" placeholder="Tezkor qidiruv...">
+      </div>
+      <button class="btn ghost" id="resetBtn">Tozalash</button>
+      <button class="btn" id="refreshBtn">Yangilash</button>
+    </div>
+
+    <div class="body">
+      <aside class="sidebar">
+        <div class="section">
+          <h3>Sana oralig'i</h3>
+          <div class="field">
+            <label>Sana ustuni</label>
+            <select id="dateColSelect"></select>
+          </div>
+          <div class="row2">
+            <div class="field"><label>Dan</label><input id="dateFrom" type="date"></div>
+            <div class="field"><label>Gacha</label><input id="dateTo" type="date"></div>
+          </div>
+        </div>
+        <div class="section">
+          <h3>Filtrlar</h3>
+          <div id="dimFilters"></div>
+        </div>
+        <div class="section">
+          <h3>Raqamli oraliqlar</h3>
+          <div id="numFilters"></div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="kpis" id="kpis"></div>
+
+        <div class="controls">
+          <div class="field">
+            <label>Guruhlash (o'lcham)</label>
+            <select id="groupDim"></select>
+          </div>
+          <div class="field">
+            <label>Ko'rsatkich</label>
+            <select id="measureKey"></select>
+          </div>
+          <div class="field">
+            <label>Hisoblash</label>
+            <select id="aggKey">
+              <option value="count">Soni</option>
+              <option value="sum">Yig'indi</option>
+              <option value="avg">O'rtacha</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Trend sana ustuni</label>
+            <select id="trendDate"></select>
+          </div>
+        </div>
+
+        <div class="grid">
+          <div class="card"><h2>Taqsimot (ulush)</h2><div id="pie" class="chart"></div></div>
+          <div class="card"><h2>O'lcham bo'yicha</h2><div id="col" class="chart"></div></div>
+          <div class="card wide"><h2>Vaqt bo'yicha trend</h2><div id="line" class="chart"></div></div>
+          <div class="card"><h2>Top 10</h2><div id="ranking"></div></div>
+          <div class="card">
+            <h2>Holat</h2>
+            <div id="summary" style="font-size:13px;color:var(--muted);line-height:1.9"></div>
+          </div>
+          <div class="card wide">
+            <h2>Ma'lumotlar jadvali <span class="pill" id="tableCount"></span></h2>
+            <div class="tablewrap"><table id="dataTable"><thead></thead><tbody></tbody></table></div>
+            <div class="pager">
+              <span id="pageInfo"></span>
+              <button id="prevPage">‹ Oldingi</button>
+              <button id="nextPage">Keyingi ›</button>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <div class="overlay" id="overlay"><div class="spinner"></div></div>
+
+  <script src="https://www.gstatic.com/charts/loader.js"></script>
+  <script>
+    var STATE = null;          // initial metadata
+    var FILTERS = {};          // { colKey: {type, ...} }
+    var CONTROLS = { groupDim: null, measureKey: null, agg: 'count', dateKey: null,
+                     page: 1, sortKey: '', sortDir: 'asc', search: '' };
+    var LAST = null;           // last query result
+    var chartsReady = false;
+    var queryTimer = null;
+
+    google.charts.load('current', { packages: ['corechart', 'bar'] });
+    google.charts.setOnLoadCallback(function () {
+      chartsReady = true;
+      if (LAST) drawCharts(LAST);
+    });
+
+    function $(id) { return document.getElementById(id); }
+    function show(on) { $('overlay').classList.toggle('on', on); }
+    function fmtNum(n) {
+      if (n === null || n === undefined || n === '') return '0';
+      var x = Number(n);
+      if (!isFinite(x)) return String(n);
+      var rounded = Math.round(x * 100) / 100;
+      var parts = String(rounded).split('.');
+      parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+      return parts.join('.');
+    }
+    function esc(s) {
+      return String(s).replace(/[&<>"]/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+      });
+    }
+
+    // ---- boot ----
+    window.addEventListener('load', function () {
+      show(true);
+      google.script.run
+        .withSuccessHandler(onInitial)
+        .withFailureHandler(onError)
+        .getInitialState();
+    });
+
+    function onError(err) {
+      show(false);
+      alert('Xatolik: ' + (err && err.message ? err.message : err));
+    }
+
+    function onInitial(state) {
+      STATE = state;
+      $('title').textContent = state.app.name;
+      $('sheetMeta').textContent = '• ' + state.sheetName + ' • ' +
+        fmtNum(state.rowCount) + ' ta yozuv';
+      CONTROLS.groupDim = state.defaults.groupDim;
+      CONTROLS.measureKey = state.defaults.measureKey;
+      CONTROLS.agg = state.defaults.agg;
+      CONTROLS.dateKey = state.defaults.dateKey;
+      buildControls(state);
+      buildDimFilters(state);
+      buildNumFilters(state);
+      buildDateCols(state);
+      bindGlobal();
+      applyResult(state.query);
+      show(false);
+    }
+
+    // ---- build static controls ----
+    function buildControls(state) {
+      var g = $('groupDim'); g.innerHTML = '';
+      state.dimensions.forEach(function (c) {
+        var o = document.createElement('option'); o.value = c.key; o.textContent = c.label;
+        if (c.key === CONTROLS.groupDim) o.selected = true; g.appendChild(o);
+      });
+      var m = $('measureKey'); m.innerHTML = '<option value="">— (yozuvlar soni)</option>';
+      state.measures.forEach(function (c) {
+        var o = document.createElement('option'); o.value = c.key; o.textContent = c.label;
+        if (c.key === CONTROLS.measureKey) o.selected = true; m.appendChild(o);
+      });
+      $('aggKey').value = CONTROLS.agg;
+      var t = $('trendDate'); t.innerHTML = '<option value="">— sana ustuni yo\'q</option>';
+      state.dateColumns.forEach(function (c) {
+        var o = document.createElement('option'); o.value = c.key; o.textContent = c.label;
+        if (c.key === CONTROLS.dateKey) o.selected = true; t.appendChild(o);
+      });
+
+      g.onchange = function () { CONTROLS.groupDim = g.value; query(); };
+      m.onchange = function () {
+        CONTROLS.measureKey = m.value || null;
+        if (!CONTROLS.measureKey) { CONTROLS.agg = 'count'; $('aggKey').value = 'count'; }
+        else if (CONTROLS.agg === 'count') { CONTROLS.agg = 'sum'; $('aggKey').value = 'sum'; }
+        query();
+      };
+      $('aggKey').onchange = function () { CONTROLS.agg = $('aggKey').value; query(); };
+      t.onchange = function () { CONTROLS.dateKey = t.value || null; query(); };
+    }
+
+    function buildDateCols(state) {
+      var d = $('dateColSelect'); d.innerHTML = '<option value="">— tanlang —</option>';
+      state.dateColumns.forEach(function (c) {
+        var o = document.createElement('option'); o.value = c.key; o.textContent = c.label;
+        d.appendChild(o);
+      });
+      if (state.dateColumns.length) { d.value = state.dateColumns[0].key; }
+      function applyDate() {
+        var key = d.value, from = $('dateFrom').value, to = $('dateTo').value;
+        // remove any previous date filters
+        Object.keys(FILTERS).forEach(function (k) {
+          if (FILTERS[k] && FILTERS[k].type === 'dateRange') delete FILTERS[k];
+        });
+        if (key && (from || to)) {
+          FILTERS[key] = { type: 'dateRange', from: from || null, to: to || null };
+        }
+        CONTROLS.page = 1; query();
+      }
+      d.onchange = applyDate;
+      $('dateFrom').onchange = applyDate;
+      $('dateTo').onchange = applyDate;
+    }
+
+    // ---- dimension multi-selects ----
+    function buildDimFilters(state) {
+      var host = $('dimFilters'); host.innerHTML = '';
+      if (!state.dimensions.length) { host.innerHTML = '<div class="empty">Filtr ustunlari topilmadi</div>'; return; }
+      state.dimensions.forEach(function (col) {
+        host.appendChild(makeMultiSelect(col, (state.query.options || {})[col.key] || []));
+      });
+    }
+
+    function makeMultiSelect(col, options) {
+      var wrap = document.createElement('div'); wrap.className = 'ms'; wrap.dataset.key = col.key;
+      var btn = document.createElement('button'); btn.className = 'ms-btn';
+      btn.innerHTML = '<span class="lbl">' + esc(col.label) + '</span><span class="cnt">0</span>';
+      var panel = document.createElement('div'); panel.className = 'ms-panel';
+      var srch = document.createElement('div'); srch.className = 'ms-search';
+      srch.innerHTML = '<input type="text" placeholder="qidirish...">';
+      panel.appendChild(srch);
+      var list = document.createElement('div'); list.className = 'ms-list';
+      panel.appendChild(list);
+      wrap.appendChild(btn); wrap.appendChild(panel);
+
+      renderOptions(list, col.key, options);
+
+      btn.onclick = function (e) {
+        e.stopPropagation();
+        document.querySelectorAll('.ms-panel.open').forEach(function (p) { if (p !== panel) p.classList.remove('open'); });
+        panel.classList.toggle('open');
+      };
+      srch.querySelector('input').oninput = function () {
+        var t = this.value.toLowerCase();
+        list.querySelectorAll('.ms-opt').forEach(function (o) {
+          o.style.display = o.dataset.v.toLowerCase().indexOf(t) !== -1 ? '' : 'none';
+        });
+      };
+      return wrap;
+    }
+
+    function renderOptions(list, key, options) {
+      var selected = (FILTERS[key] && FILTERS[key].values) ? FILTERS[key].values.slice() : [];
+      var union = options.slice();
+      selected.forEach(function (v) { if (union.indexOf(v) === -1) union.push(v); });
+      list.innerHTML = '';
+      union.forEach(function (v) {
+        var row = document.createElement('label'); row.className = 'ms-opt'; row.dataset.v = String(v);
+        var cb = document.createElement('input'); cb.type = 'checkbox'; cb.value = String(v);
+        cb.checked = selected.indexOf(String(v)) !== -1 || selected.indexOf(v) !== -1;
+        cb.onchange = function () { onDimChange(key, list); };
+        var sp = document.createElement('span'); sp.textContent = String(v);
+        row.appendChild(cb); row.appendChild(sp); list.appendChild(row);
+      });
+      updateMsCount(key, list);
+    }
+
+    function onDimChange(key, list) {
+      var vals = [];
+      list.querySelectorAll('input[type=checkbox]').forEach(function (cb) { if (cb.checked) vals.push(cb.value); });
+      if (vals.length) FILTERS[key] = { type: 'in', values: vals };
+      else delete FILTERS[key];
+      updateMsCount(key, list);
+      CONTROLS.page = 1;
+      query();
+    }
+
+    function updateMsCount(key, list) {
+      var wrap = list.closest('.ms');
+      var n = list.querySelectorAll('input[type=checkbox]:checked').length;
+      wrap.querySelector('.cnt').textContent = n;
+    }
+
+    // ---- numeric range filters ----
+    function buildNumFilters(state) {
+      var host = $('numFilters'); host.innerHTML = '';
+      if (!state.measures.length) { host.innerHTML = '<div class="empty">Raqamli ustun yo\'q</div>'; return; }
+      state.measures.forEach(function (col) {
+        var f = document.createElement('div'); f.className = 'field';
+        f.innerHTML = '<label>' + esc(col.label) + '</label>' +
+          '<div class="row2"><input type="number" placeholder="min"><input type="number" placeholder="max"></div>';
+        var ins = f.querySelectorAll('input');
+        function apply() {
+          var mn = ins[0].value, mx = ins[1].value;
+          if (mn !== '' || mx !== '') FILTERS[col.key] = { type: 'numberRange', min: mn === '' ? null : Number(mn), max: mx === '' ? null : Number(mx) };
+          else delete FILTERS[col.key];
+          CONTROLS.page = 1; query();
+        }
+        ins[0].onchange = apply; ins[1].onchange = apply;
+        host.appendChild(f);
+      });
+    }
+
+    function bindGlobal() {
+      document.addEventListener('click', function () {
+        document.querySelectorAll('.ms-panel.open').forEach(function (p) { p.classList.remove('open'); });
+      });
+      $('globalSearch').addEventListener('input', function () {
+        CONTROLS.search = this.value; CONTROLS.page = 1;
+        clearTimeout(queryTimer); queryTimer = setTimeout(query, 300);
+      });
+      $('refreshBtn').onclick = function () {
+        show(true);
+        google.script.run.withSuccessHandler(onInitial).withFailureHandler(onError).getInitialState();
+      };
+      $('resetBtn').onclick = function () {
+        FILTERS = {}; CONTROLS.search = ''; CONTROLS.page = 1; CONTROLS.sortKey = '';
+        $('globalSearch').value = ''; $('dateFrom').value = ''; $('dateTo').value = '';
+        document.querySelectorAll('#numFilters input').forEach(function (i) { i.value = ''; });
+        query();
+      };
+      $('prevPage').onclick = function () { if (CONTROLS.page > 1) { CONTROLS.page--; query(); } };
+      $('nextPage').onclick = function () {
+        var max = Math.ceil((LAST ? LAST.total : 0) / (LAST ? LAST.table.pageSize : 50));
+        if (CONTROLS.page < max) { CONTROLS.page++; query(); }
+      };
+    }
+
+    // ---- query ----
+    function payload() {
+      return {
+        filters: FILTERS, search: CONTROLS.search, groupDim: CONTROLS.groupDim,
+        measureKey: CONTROLS.measureKey, agg: CONTROLS.agg, dateKey: CONTROLS.dateKey,
+        page: CONTROLS.page, sortKey: CONTROLS.sortKey, sortDir: CONTROLS.sortDir,
+      };
+    }
+    function query() {
+      show(true);
+      google.script.run.withSuccessHandler(applyResult).withFailureHandler(onError).runQuery(payload());
+    }
+
+    function applyResult(res) {
+      LAST = res;
+      renderKpis(res);
+      renderRanking(res);
+      renderSummary(res);
+      renderTable(res);
+      refreshDimOptions(res);
+      if (chartsReady) drawCharts(res);
+      show(false);
+    }
+
+    function refreshDimOptions(res) {
+      if (!res.options) return;
+      document.querySelectorAll('#dimFilters .ms').forEach(function (wrap) {
+        var key = wrap.dataset.key;
+        renderOptions(wrap.querySelector('.ms-list'), key, res.options[key] || []);
+      });
+    }
+
+    function renderKpis(res) {
+      var host = $('kpis'); host.innerHTML = '';
+      addKpi(host, 'Jami yozuvlar', fmtNum(res.total));
+      (res.kpis.measures || []).forEach(function (m) {
+        var col = findCol(m.key);
+        addKpi(host, (col ? col.label : m.key) + ' (yig\'indi)', fmtNum(m.sum),
+          'o\'rtacha: ' + fmtNum(m.avg));
+      });
+    }
+    function addKpi(host, label, value, sub) {
+      var d = document.createElement('div'); d.className = 'kpi';
+      d.innerHTML = '<div class="label">' + esc(label) + '</div><div class="value">' +
+        esc(value) + '</div>' + (sub ? '<div class="sub">' + esc(sub) + '</div>' : '');
+      host.appendChild(d);
+    }
+    function findCol(key) {
+      var all = STATE.columns || [];
+      for (var i = 0; i < all.length; i++) if (all[i].key === key) return all[i];
+      return null;
+    }
+
+    function renderRanking(res) {
+      var host = $('ranking'); host.innerHTML = '';
+      var data = (res.ranking && res.ranking.data) || [];
+      if (!data.length) { host.innerHTML = '<div class="empty">Ma\'lumot yo\'q</div>'; return; }
+      data.forEach(function (it, i) {
+        var row = document.createElement('div'); row.className = 'rank-item';
+        row.innerHTML = '<span class="pos">' + (i + 1) + '</span><span class="nm">' +
+          esc(it.label) + '</span><span class="vl">' + fmtNum(it.value) + '</span>';
+        host.appendChild(row);
+      });
+    }
+
+    function renderSummary(res) {
+      var gc = findCol(res.category.dim);
+      var mc = findCol(res.category.measureKey);
+      var aggTxt = { count: 'Soni', sum: 'Yig\'indi', avg: 'O\'rtacha' }[res.category.agg] || res.category.agg;
+      var active = Object.keys(res.filters || {}).length + (CONTROLS.search ? 1 : 0);
+      $('summary').innerHTML =
+        'Guruhlash: <b>' + esc(gc ? gc.label : '—') + '</b><br>' +
+        'Ko\'rsatkich: <b>' + esc(mc ? mc.label : 'Yozuvlar soni') + '</b><br>' +
+        'Hisoblash: <b>' + esc(aggTxt) + '</b><br>' +
+        'Faol filtrlar: <b>' + active + '</b><br>' +
+        'Natija: <b>' + fmtNum(res.total) + '</b> yozuv';
+    }
+
+    function renderTable(res) {
+      var thead = $('dataTable').tHead || $('dataTable').createTHead();
+      var tbody = $('dataTable').tBodies[0] || $('dataTable').createTBody();
+      thead.innerHTML = ''; tbody.innerHTML = '';
+      var tr = document.createElement('tr');
+      res.table.columns.forEach(function (c) {
+        var th = document.createElement('th');
+        th.textContent = c.label + (CONTROLS.sortKey === c.key ? (CONTROLS.sortDir === 'asc' ? ' ▲' : ' ▼') : '');
+        th.onclick = function () {
+          if (CONTROLS.sortKey === c.key) CONTROLS.sortDir = CONTROLS.sortDir === 'asc' ? 'desc' : 'asc';
+          else { CONTROLS.sortKey = c.key; CONTROLS.sortDir = 'asc'; }
+          query();
+        };
+        tr.appendChild(th);
+      });
+      thead.appendChild(tr);
+      res.table.rows.forEach(function (row) {
+        var r = document.createElement('tr');
+        row.forEach(function (cell, ci) {
+          var td = document.createElement('td');
+          var type = res.table.columns[ci].type;
+          td.textContent = (type === 'number' && cell !== '') ? fmtNum(cell) : cell;
+          if (type === 'number') td.style.textAlign = 'right';
+          r.appendChild(td);
+        });
+        tbody.appendChild(r);
+      });
+      var from = res.total ? (res.table.page - 1) * res.table.pageSize + 1 : 0;
+      var to = Math.min(res.table.page * res.table.pageSize, res.total);
+      $('pageInfo').textContent = from + '–' + to + ' / ' + fmtNum(res.total);
+      $('tableCount').textContent = fmtNum(res.total) + ' yozuv';
+      $('prevPage').disabled = res.table.page <= 1;
+      $('nextPage').disabled = to >= res.total;
+    }
+
+    // ---- charts ----
+    function drawCharts(res) {
+      var palette = STATE.palette;
+      drawPie(res, palette);
+      drawColumn(res, palette);
+      drawLine(res, palette);
+    }
+    function toDataTable(rows, valueLabel) {
+      var dt = new google.visualization.DataTable();
+      dt.addColumn('string', 'Nomi'); dt.addColumn('number', valueLabel);
+      rows.forEach(function (r) { dt.addRow([r.label, Number(r.value) || 0]); });
+      return dt;
+    }
+    function drawPie(res, palette) {
+      var el = $('pie');
+      var data = (res.category && res.category.data) || [];
+      if (!data.length) { el.innerHTML = '<div class="empty">Ma\'lumot yo\'q</div>'; return; }
+      var chart = new google.visualization.PieChart(el);
+      chart.draw(toDataTable(data, 'qiymat'), {
+        colors: palette, pieHole: 0.4, legend: { position: 'right' },
+        chartArea: { width: '90%', height: '85%' }, height: 300,
+      });
+    }
+    function drawColumn(res, palette) {
+      var el = $('col');
+      var data = (res.category && res.category.data) || [];
+      if (!data.length) { el.innerHTML = '<div class="empty">Ma\'lumot yo\'q</div>'; return; }
+      var chart = new google.visualization.ColumnChart(el);
+      chart.draw(toDataTable(data, 'qiymat'), {
+        colors: [palette[0]], legend: { position: 'none' },
+        chartArea: { width: '85%', height: '70%' }, height: 300,
+        hAxis: { slantedText: true, slantedTextAngle: 30 },
+      });
+    }
+    function drawLine(res, palette) {
+      var el = $('line');
+      var data = (res.trend && res.trend.data) || [];
+      if (!data.length) { el.innerHTML = '<div class="empty">Trend uchun sana ustuni tanlang yoki ma\'lumot yo\'q</div>'; return; }
+      var chart = new google.visualization.AreaChart(el);
+      chart.draw(toDataTable(data, 'qiymat'), {
+        colors: [palette[0]], legend: { position: 'none' },
+        chartArea: { width: '90%', height: '75%' }, height: 300,
+        areaOpacity: 0.15, pointSize: 4,
+      });
+    }
+  </script>
+</body>
+</html>
