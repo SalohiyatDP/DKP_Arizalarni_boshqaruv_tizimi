@@ -11,6 +11,7 @@
     "src/utils/Validator.js",
     "src/utils/CacheManager.js",
     "src/repository/BaseRepository.js",
-    "src/repository/Database.js"
+    "src/repository/Database.js",
+    "src/setup/SeedData.js"
   ]
 }

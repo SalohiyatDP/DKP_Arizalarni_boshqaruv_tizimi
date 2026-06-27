@@ -131,6 +131,15 @@ DKP_Arizalarni_boshqaruv_tizimi/
 │       ├── Database.js          # Spreadsheet bootstrap, setupAll(), withLock()
 │       └── BaseRepository.js    # Schema-driven CRUD (bitta getValues/setValues, Map index)
 │
+│   └── setup/
+│       └── SeedData.js          # seedSampleData() — sheetlarni yaratib demo data bilan to'ldiradi
+│
+├── samples/
+│   └── DKP_Namuna.xlsx          # Drive'ga yuklash uchun tayyor namuna (16 tab + demo data)
+│
+├── tools/
+│   └── build_sample_xlsx.py     # Namuna .xlsx ni qayta yaratuvchi skript (dependency-free)
+│
 └── test/                        # Node unit testlar (sof mantiq)
     ├── dateutils.test.js
     ├── security.test.js
@@ -223,6 +232,40 @@ Rang chegaralari `CONFIG.SLA.THRESHOLDS` ichida saqlanadi.
 ---
 
 ## O'rnatish va deploy (Google Apps Script)
+
+### 0. Dastlabki Google Sheets namunasi (Drive'ga yuklash uchun)
+
+`samples/DKP_Namuna.xlsx` — barcha **16 ta tab**, to'g'ri header'lar va real demo
+ma'lumotlar bilan tayyor namuna fayl.
+
+1. Faylni [Google Drive](https://drive.google.com/drive) ga yuklang.
+2. O'ng tugma → **Open with → Google Sheets** (yoki Drive sozlamasida "Convert uploads"
+   yoqilgan bo'lsa avtomatik Google Sheets'ga aylanadi).
+3. Hosil bo'lgan Google Sheets faylining ID sini (`/d/<ID>/edit`) `DKP_SPREADSHEET_ID`
+   Script Property sifatida kiriting (4-bandga qarang).
+
+Namunadagi **demo hisoblar** (parollar):
+
+| Username | Parol | Rol |
+|----------|-------|-----|
+| `admin` | `Admin@123` | ADMIN |
+| `region` | `Region@123` | REGION |
+| `district` | `District@123` | DISTRICT |
+| `engineer` | `Engineer@123` | ENGINEER |
+
+> Parol hash'lari `Security.hashPassword` algoritmi (`SHA-256(salt + ':' + parol)`) bilan
+> hisoblangan, shuning uchun bu hisoblar AuthService tayyor bo'lgach to'g'ridan-to'g'ri ishlaydi.
+> **Birinchi kirishdan so'ng parollarni almashtirish tavsiya etiladi** (`MustChangePassword = TRUE`).
+
+Namunani qayta yaratish (ma'lumotni o'zgartirgandan keyin):
+
+```bash
+python3 tools/build_sample_xlsx.py   # -> samples/DKP_Namuna.xlsx
+```
+
+**Muqobil yo'l (GAS-native):** Excel yuklash o'rniga, kodni deploy qilib bo'lgach Apps Script
+muharririda `seedSampleData()` funksiyasini bir marta ishga tushiring — u barcha sheetlarni yaratadi
+va aynan shu demo ma'lumotlar bilan to'ldiradi (`src/setup/SeedData.js`).
 
 ### 1. Talablar
 - [Node.js](https://nodejs.org/) (lokal tooling uchun)
