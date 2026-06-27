@@ -61,7 +61,8 @@ const API = (() => {
   });
   return {
     getInitialState: () => call('apiGetInitialState'),
-    runQuery: (payload) => call('apiRunQuery', payload)
+    runQuery: (payload) => call('apiRunQuery', payload),
+    exportData: (payload) => call('apiExportData', payload)
   };
 })();
 </script>
@@ -244,6 +245,8 @@ const Dashboard = (() => {
       clearTimeout(queryTimer); queryTimer = setTimeout(query, 300);
     });
     $('refreshBtn').onclick = () => init();
+    $('printBtn').onclick = () => window.print();
+    $('exportBtn').onclick = () => doExport();
     $('resetBtn').onclick = () => {
       FILTERS = {}; CONTROLS.search = ''; CONTROLS.page = 1; CONTROLS.sortKey = '';
       $('globalSearch').value = ''; $('dateFrom').value = ''; $('dateTo').value = '';
@@ -265,9 +268,21 @@ const Dashboard = (() => {
   });
   const query = () => { API.runQuery(payload()).then(applyResult).catch((e) => Toast.error('So\'rov xatosi: ' + e)); };
 
+  const doExport = () => {
+    API.exportData(payload()).then((res) => {
+      const blob = new Blob(['\uFEFF' + res.content], { type: res.mimeType });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = res.filename;
+      document.body.appendChild(a); a.click();
+      document.body.removeChild(a); URL.revokeObjectURL(url);
+      Toast.success(fmtNum(res.rowCount) + ' ta yozuv eksport qilindi');
+    }).catch((e) => Toast.error('Eksport xatosi: ' + e));
+  };
+
   const applyResult = (res) => {
     LAST = res;
-    renderKpis(res); renderRanking(res); renderSummary(res); renderTable(res); refreshDimOptions(res);
+    renderKpis(res); renderFinance(res); renderRanking(res); renderSummary(res); renderTable(res); refreshDimOptions(res);
     if (chartsReady) drawCharts(res);
   };
 
@@ -290,6 +305,21 @@ const Dashboard = (() => {
     const d = document.createElement('div'); d.className = 'kpi';
     d.innerHTML = '<div class="label">' + esc(label) + '</div><div class="value">' + esc(value) + '</div>' + (sub ? '<div class="sub">' + esc(sub) + '</div>' : '');
     host.appendChild(d);
+  };
+
+  const renderFinance = (res) => {
+    const host = $('financeKpis'); host.innerHTML = '';
+    const f = res.finance;
+    if (!f) return;
+    const card = (cls, label, value, sub) => {
+      const d = document.createElement('div'); d.className = 'kpi ' + cls;
+      d.innerHTML = '<div class="label">' + esc(label) + '</div><div class="value">' + esc(value) + '</div>' + (sub ? '<div class="sub">' + esc(sub) + '</div>' : '');
+      host.appendChild(d);
+    };
+    card('', 'Hisoblangan summa', fmtNum(f.invoice));
+    card('', 'To\'langan summa', fmtNum(f.paid), 'yig\'ilish: ' + f.collectionPercent + '%');
+    card('debt', 'Qarz (to\'lanmagan)', fmtNum(f.debt));
+    card('pending', 'Yig\'ilish darajasi', f.collectionPercent + '%');
   };
 
   const renderRanking = (res) => {
@@ -353,7 +383,7 @@ const Dashboard = (() => {
   };
 
   // ---- charts ----
-  const drawCharts = (res) => { drawPie(res); drawColumn(res); drawLine(res); };
+  const drawCharts = (res) => { drawPie(res); drawColumn(res); drawLine(res); drawSla(res); };
   const toDataTable = (rows) => {
     const dt = new google.visualization.DataTable();
     dt.addColumn('string', 'Nomi'); dt.addColumn('number', 'Qiymat');
@@ -374,6 +404,29 @@ const Dashboard = (() => {
     const el = $('line'); const data = (res.trend && res.trend.data) || [];
     if (!data.length) { el.innerHTML = '<div class="empty">Trend uchun sana ustuni tanlang yoki ma\'lumot yo\'q</div>'; return; }
     new google.visualization.AreaChart(el).draw(toDataTable(data), { colors: [STATE.palette[0]], legend: { position: 'none' }, chartArea: { width: '90%', height: '75%' }, height: 300, areaOpacity: 0.15, pointSize: 4 });
+  };
+
+  const drawSla = (res) => {
+    const el = $('slaChart'); const legend = $('slaLegend');
+    const sla = res.sla; legend.innerHTML = '';
+    if (!sla || !sla.items.length) {
+      el.innerHTML = '<div class="empty">SLA uchun sana ustuni topilmadi</div>';
+      return;
+    }
+    const dt = new google.visualization.DataTable();
+    dt.addColumn('string', 'Holat'); dt.addColumn('number', 'Soni');
+    const colors = [];
+    sla.items.forEach((it) => { dt.addRow([it.label, it.value]); colors.push(it.color); });
+    new google.visualization.PieChart(el).draw(dt, {
+      colors: colors, pieHole: 0.5, legend: { position: 'none' },
+      chartArea: { width: '92%', height: '88%' }, height: 240
+    });
+    sla.items.forEach((it) => {
+      const b = document.createElement('span'); b.className = 'sla-badge';
+      b.innerHTML = '<span class="dot" style="background:' + it.color + '"></span>' +
+        esc(it.label) + ' <span class="n">' + fmtNum(it.value) + '</span>';
+      legend.appendChild(b);
+    });
   };
 
   return { init, initCharts };

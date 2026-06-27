@@ -5,9 +5,16 @@
  * Ish kuni hisob-kitobi: Shanba va Yakshanba hisoblanmaydi, bayram kunlari ham
  * hisoblanmaydi. SLA / muddat tahlili shu modul orqali bajariladi.
  *
- * "holidaySet" — buildHolidaySet() qaytaradigan obyekt:
- *   { fixed: {yyyy-MM-dd: true}, recurring: {MM-dd: true} }
+ * Optimizatsiya: workingDaysBetween() kun-bakun aylanmaydi — hafta kunlari O(1)
+ * arifmetika bilan, bayramlar esa faqat ro'yxat bo'yicha hisoblanadi. Bu 50 000+
+ * yozuv uchun ham tez ishlashni ta'minlaydi.
+ *
+ * "holidays" — buildHolidaySet() qaytaradigan obyekt:
+ *   { fixed: {yyyy-MM-dd:true}, recurring: {MM-dd:true},
+ *     fixedList: [Date...], recurringList: ['MM-dd'...] }
  */
+
+var WD_MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 /**
  * Sananing vaqtini olib tashlab, mahalliy yarim tundagi nusxasini qaytaradi.
@@ -60,11 +67,13 @@ function wdAddDays(date, days) {
 /**
  * Bayram kunlari ro'yxatidan tez qidiruv obyekti tuzish.
  * @param {Array<Object>} rows - { date: (Date|string), recurring: boolean }
- * @returns {Object} { fixed, recurring }
+ * @returns {Object} { fixed, recurring, fixedList, recurringList }
  */
 function buildHolidaySet(rows) {
   var fixed = {};
   var recurring = {};
+  var fixedList = [];
+  var recurringList = [];
   (rows || []).forEach(function (row) {
     if (!row || !row.date) {
       return;
@@ -74,12 +83,20 @@ function buildHolidaySet(rows) {
       return;
     }
     if (row.recurring) {
-      recurring[wdMonthDayKey(d)] = true;
+      var md = wdMonthDayKey(d);
+      if (!recurring[md]) {
+        recurring[md] = true;
+        recurringList.push(md);
+      }
     } else {
-      fixed[wdDateKey(d)] = true;
+      var key = wdDateKey(d);
+      if (!fixed[key]) {
+        fixed[key] = true;
+        fixedList.push(wdStartOfDay(d));
+      }
     }
   });
-  return { fixed: fixed, recurring: recurring };
+  return { fixed: fixed, recurring: recurring, fixedList: fixedList, recurringList: recurringList };
 }
 
 /**
@@ -89,6 +106,15 @@ function buildHolidaySet(rows) {
  */
 function isWeekend(date) {
   return getCalendarConfig().WEEKEND_DAYS.indexOf(date.getDay()) !== -1;
+}
+
+/**
+ * Hafta kuni (dam olish emas)mi?
+ * @param {Date} date
+ * @returns {boolean}
+ */
+function wdIsWeekday(date) {
+  return !isWeekend(date);
 }
 
 /**
@@ -154,6 +180,78 @@ function addWorkingDays(startDate, n, holidays) {
 }
 
 /**
+ * [lo, hi] (ikkalasi ham kiritilgan) oralig'idagi hafta kunlari soni — O(1).
+ * @param {Date} lo - boshlang'ich (yarim tun)
+ * @param {Date} hi - oxirgi (yarim tun)
+ * @returns {number}
+ */
+function wdWeekdaysInclusive(lo, hi) {
+  if (hi.getTime() < lo.getTime()) {
+    return 0;
+  }
+  var total = Math.round((hi.getTime() - lo.getTime()) / WD_MS_PER_DAY) + 1;
+  var fullWeeks = Math.floor(total / 7);
+  var weekdays = fullWeeks * 5;
+  var remainder = total - fullWeeks * 7;
+  var dow = lo.getDay();
+  for (var i = 0; i < remainder; i++) {
+    var d = (dow + i) % 7;
+    if (d !== 0 && d !== 6) {
+      weekdays++;
+    }
+  }
+  return weekdays;
+}
+
+/**
+ * (lo, hi] oralig'iga (lo chiqarib, hi kiritib) tushadigan bayram-hafta kunlari soni.
+ * Faqat bayramlar ro'yxati bo'yicha aylanadi (O(bayramlar soni)).
+ * @param {Date} lo
+ * @param {Date} hi
+ * @param {Object} holidays
+ * @returns {number}
+ */
+function wdHolidaysInRange(lo, hi, holidays) {
+  if (!holidays || hi.getTime() <= lo.getTime()) {
+    return 0;
+  }
+  var counted = {};
+  var count = 0;
+
+  function consider(date) {
+    if (!wdIsWeekday(date)) {
+      return;
+    }
+    var t = date.getTime();
+    if (t <= lo.getTime() || t > hi.getTime()) {
+      return;
+    }
+    var key = wdDateKey(date);
+    if (!counted[key]) {
+      counted[key] = true;
+      count++;
+    }
+  }
+
+  (holidays.fixedList || []).forEach(function (d) {
+    consider(wdStartOfDay(d));
+  });
+
+  var startYear = lo.getFullYear();
+  var endYear = hi.getFullYear();
+  (holidays.recurringList || []).forEach(function (md) {
+    var parts = md.split('-');
+    var month = parseInt(parts[0], 10) - 1;
+    var day = parseInt(parts[1], 10);
+    for (var y = startYear; y <= endYear; y++) {
+      consider(new Date(y, month, day));
+    }
+  });
+
+  return count;
+}
+
+/**
  * Ikki sana orasidagi ish kunlari (boshi chiqarib, oxiri kiritib). Tartibga bog'liq emas.
  * @param {Date} start
  * @param {Date} end
@@ -161,7 +259,6 @@ function addWorkingDays(startDate, n, holidays) {
  * @returns {number}
  */
 function workingDaysBetween(start, end, holidays) {
-  var maxScan = getCalendarConfig().MAX_DAY_SCAN;
   var from = wdStartOfDay(start);
   var to = wdStartOfDay(end);
   if (from.getTime() === to.getTime()) {
@@ -172,17 +269,11 @@ function workingDaysBetween(start, end, holidays) {
     from = to;
     to = tmp;
   }
-  var count = 0;
-  var cursor = wdAddDays(from, 1);
-  var guard = 0;
-  while (cursor.getTime() <= to.getTime() && guard < maxScan) {
-    if (isWorkingDay(cursor, holidays)) {
-      count++;
-    }
-    cursor = wdAddDays(cursor, 1);
-    guard++;
-  }
-  return count;
+  var firstAfter = wdAddDays(from, 1);
+  var weekdays = wdWeekdaysInclusive(firstAfter, to);
+  var holidayCount = wdHolidaysInRange(from, to, holidays);
+  var result = weekdays - holidayCount;
+  return result < 0 ? 0 : result;
 }
 
 /**
