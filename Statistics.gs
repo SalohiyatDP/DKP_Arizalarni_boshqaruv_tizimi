@@ -153,3 +153,87 @@ function monthlyTimeSeries(records, dateKey, options) {
     return { label: key, value: value };
   });
 }
+
+
+/**
+ * Yozuvlarda berilgan kalit mavjudligini tekshirish (hosil ustun bormi?).
+ * @param {Array<Object>} records
+ * @param {string} key
+ * @returns {boolean}
+ */
+function recordsHaveKey(records, key) {
+  return !!(key && records.length && Object.prototype.hasOwnProperty.call(records[0], key));
+}
+
+/**
+ * Moliyaviy yig'indilar (hosil qilingan summa ustunlari asosida).
+ * @param {Array<Object>} records
+ * @returns {?Object} { invoice, paid, debt, collectionPercent } yoki null.
+ */
+function computeFinanceSummary(records) {
+  var D = getDerivedLabels();
+  if (!recordsHaveKey(records, D.INVOICE_TOTAL) && !recordsHaveKey(records, D.PAID_TOTAL)) {
+    return null;
+  }
+  var invoice = 0;
+  var paid = 0;
+  for (var i = 0; i < records.length; i++) {
+    var inv = records[i][D.INVOICE_TOTAL];
+    var pd = records[i][D.PAID_TOTAL];
+    if (typeof inv === 'number') {
+      invoice += inv;
+    }
+    if (typeof pd === 'number') {
+      paid += pd;
+    }
+  }
+  var debt = Math.max(0, invoice - paid);
+  return {
+    invoice: invoice,
+    paid: paid,
+    debt: debt,
+    collectionPercent: invoice > 0 ? Math.round((paid / invoice) * 100) : 0
+  };
+}
+
+/**
+ * SLA holati bo'yicha taqsimot (rang bilan). Diagramma uchun tayyor.
+ * @param {Array<Object>} records
+ * @returns {?Object} { total, items: [{label, value, color}] } yoki null.
+ */
+function computeSlaSummary(records) {
+  var D = getDerivedLabels();
+  var key = D.SLA_STATE;
+  if (!recordsHaveKey(records, key)) {
+    return null;
+  }
+  var sla = getSlaConfig();
+  var colorByLabel = {};
+  Object.keys(sla.LABELS).forEach(function (k) {
+    colorByLabel[sla.LABELS[k]] = sla.COLORS[k];
+  });
+  var statusColors = { 'Bajarilgan': '#2e7d32', 'Rad etilgan': '#9e9e9e', 'Sanasiz': '#bdbdbd' };
+
+  var counts = {};
+  var order = [];
+  for (var i = 0; i < records.length; i++) {
+    var label = records[i][key] || 'Sanasiz';
+    if (counts[label] === undefined) {
+      counts[label] = 0;
+      order.push(label);
+    }
+    counts[label]++;
+  }
+
+  var items = order.map(function (label) {
+    return {
+      label: label,
+      value: counts[label],
+      color: colorByLabel[label] || statusColors[label] || '#1a73e8'
+    };
+  });
+  items.sort(function (a, b) {
+    return b.value - a.value;
+  });
+  return { total: records.length, items: items };
+}

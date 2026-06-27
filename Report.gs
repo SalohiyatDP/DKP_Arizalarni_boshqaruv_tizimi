@@ -2,11 +2,16 @@
  * Report.gs - Hisobotni o'qish moduli
  * DKP - Hisobot tahlili tizimi
  *
- * Tayyor hisobot varag'ini qat'iy sxemasiz o'qiydi:
+ * Tayyor standart hisobotni qat'iy sxemasiz, lekin uning real tuzilmasiga
+ * moslashgan holda o'qiydi:
  *  - butun ma'lumot diapazoni BITTA getValues() chaqirig'i bilan olinadi;
- *  - har bir ustunning turi qiymatlardan namuna olib aniqlanadi;
- *  - qatorlar ustun kalitlari bilan tiplangan obyektlarga aylantiriladi;
- *  - ustunlar o'lcham (dimension), ko'rsatkich (measure) va sana turlariga ajratiladi.
+ *  - sarlavha qatori AVTOMATIK aniqlanadi (standart hisobotda sarlavha 1-qatorda
+ *    emas: yuqorida hisobot nomi va sana qatorlari bo'ladi);
+ *  - sarlavhadan keyingi "ikkilamchi sarlavha" (bo'sh asosiy ustunli) qatorlar
+ *    ma'lumot deb hisoblanmaydi;
+ *  - har bir ustun turi (number/date/string) namuna olib aniqlanadi (matnli
+ *    sanalar ham sana sifatida tan olinadi);
+ *  - biznes ustunlari (Turar/Noturar, muddat, SLA, to'lov) qo'shiladi.
  */
 
 /**
@@ -24,6 +29,112 @@ function getReportSheet() {
     return sheet;
   }
   return ss.getActiveSheet();
+}
+
+/**
+ * Bir qatorda nechta bo'sh bo'lmagan katak borligi.
+ * @param {Array} row
+ * @returns {number}
+ */
+function countFilledCells(row) {
+  var n = 0;
+  for (var i = 0; i < row.length; i++) {
+    var v = row[i];
+    if (v !== '' && v !== null && v !== undefined) {
+      n++;
+    }
+  }
+  return n;
+}
+
+/**
+ * Qatordagi sarlavha kalit so'zlari mosligi (ball).
+ * @param {Array} row
+ * @returns {number}
+ */
+function headerKeywordScore(row) {
+  var keywords = getHeaderKeywords();
+  var score = 0;
+  for (var i = 0; i < row.length; i++) {
+    var cell = row[i];
+    if (cell === '' || cell === null || cell === undefined) {
+      continue;
+    }
+    var norm = normalizeLabel(cell);
+    for (var k = 0; k < keywords.length; k++) {
+      if (norm.indexOf(normalizeLabel(keywords[k])) !== -1) {
+        score++;
+        break;
+      }
+    }
+  }
+  return score;
+}
+
+/**
+ * Sarlavha qatori indeksini (0-asosli) aniqlash.
+ * Avval kalit so'zlar bo'yicha, topilmasa konfiguratsiyadagi HEADER_ROW.
+ * @param {Array<Array>} values
+ * @returns {number}
+ */
+function detectHeaderRowIndex(values) {
+  var cfg = getReportConfig();
+  if (!cfg.AUTO_DETECT_HEADER) {
+    return Math.max(0, cfg.HEADER_ROW - 1);
+  }
+  var scan = Math.min(values.length, cfg.HEADER_SCAN_ROWS);
+  var bestRow = -1;
+  var bestScore = 0;
+  for (var r = 0; r < scan; r++) {
+    var score = headerKeywordScore(values[r]);
+    if (score > bestScore) {
+      bestScore = score;
+      bestRow = r;
+    }
+  }
+  if (bestRow !== -1 && bestScore >= cfg.MIN_HEADER_KEYWORDS) {
+    return bestRow;
+  }
+  return Math.max(0, cfg.HEADER_ROW - 1);
+}
+
+/**
+ * Sarlavhalardagi bo'sh bo'lmagan dastlabki ustun indekslarini (primary) topish.
+ * Ular ma'lumot qatorini ajratishda ishlatiladi (ikkilamchi sarlavhalarni o'tkazib
+ * yuborish uchun).
+ * @param {Array<string>} rawHeaders
+ * @returns {Array<number>}
+ */
+function findPrimaryColumnIndexes(rawHeaders) {
+  var limit = getReportConfig().PRIMARY_COLUMN_COUNT;
+  var idxs = [];
+  for (var i = 0; i < rawHeaders.length && idxs.length < limit; i++) {
+    var v = rawHeaders[i];
+    if (v !== '' && v !== null && v !== undefined && String(v).trim() !== '') {
+      idxs.push(i);
+    }
+  }
+  return idxs;
+}
+
+/**
+ * Qator haqiqiy ma'lumot qatori (ikkilamchi sarlavha emas)?
+ * @param {Array} row
+ * @param {Array<number>} primaryIdxs
+ * @returns {boolean}
+ */
+function isDataRow(row, primaryIdxs) {
+  if (!primaryIdxs.length) {
+    return !isEmptyRow(row);
+  }
+  var filled = 0;
+  for (var i = 0; i < primaryIdxs.length; i++) {
+    var v = row[primaryIdxs[i]];
+    if (v !== '' && v !== null && v !== undefined) {
+      filled++;
+    }
+  }
+  return filled >= getReportConfig().MIN_PRIMARY_FILLED;
 }
 
 /**
@@ -56,7 +167,7 @@ function uniqueColumnKeys(labels) {
 }
 
 /**
- * Namuna qiymatlardan ustun turini aniqlash.
+ * Namuna qiymatlardan ustun turini aniqlash (matnli sanalar ham sana sifatida).
  * @param {Array} samples
  * @returns {string} number | date | string
  */
@@ -72,7 +183,7 @@ function detectColumnType(samples) {
     if (!(typeof v === 'number' && isFinite(v))) {
       allNumber = false;
     }
-    if (!(v instanceof Date && !isNaN(v.getTime()))) {
+    if (!looksLikeDate(v)) {
       allDate = false;
     }
     if (!allNumber && !allDate) {
@@ -100,15 +211,11 @@ function coerceCellValue(value, type) {
     return null;
   }
   if (type === T.NUMBER) {
-    var n = typeof value === 'number' ? value : Number(value);
-    return isFinite(n) ? n : null;
+    var n = typeof value === 'number' ? value : parseFlexibleNumber(value);
+    return (n !== null && isFinite(n)) ? n : null;
   }
   if (type === T.DATE) {
-    if (value instanceof Date) {
-      return isNaN(value.getTime()) ? null : value;
-    }
-    var d = new Date(value);
-    return isNaN(d.getTime()) ? null : d;
+    return parseFlexibleDate(value);
   }
   return String(value).trim();
 }
@@ -119,13 +226,7 @@ function coerceCellValue(value, type) {
  * @returns {boolean}
  */
 function isEmptyRow(row) {
-  for (var i = 0; i < row.length; i++) {
-    var v = row[i];
-    if (v !== '' && v !== null && v !== undefined) {
-      return false;
-    }
-  }
-  return true;
+  return countFilledCells(row) === 0;
 }
 
 /**
@@ -167,7 +268,7 @@ function classifyColumns(columns, records) {
     }
     var annotated = {
       key: col.key, label: col.label, index: col.index,
-      type: col.type, distinctCount: distinctCount
+      type: col.type, distinctCount: distinctCount, derived: !!col.derived
     };
     if (distinctCount > 0 && distinctCount <= maxCard) {
       dimensions.push(annotated);
@@ -186,22 +287,33 @@ function classifyColumns(columns, records) {
 
 /**
  * Hisobot varag'ini bir marta o'qib, tiplangan ustun va yozuvlarni qaytaradi.
- * @returns {Object} { columns, records, rowCount, sheetName }
+ * Biznes (hosil qilingan) ustunlar ham qo'shiladi.
+ * @returns {Object} { columns, records, rowCount, sheetName, headerRow, derivedKeys }
  */
 function readReport() {
   var sheet = getReportSheet();
   var values = sheet.getDataRange().getValues();
   var cfg = getReportConfig();
-  var headerIdx = cfg.HEADER_ROW - 1;
 
-  if (values.length <= headerIdx) {
-    return { columns: [], records: [], rowCount: 0, sheetName: sheet.getName() };
+  if (!values.length) {
+    return { columns: [], records: [], rowCount: 0, sheetName: sheet.getName(), headerRow: 0, derivedKeys: [] };
   }
 
-  var labels = normalizeHeaders(values[headerIdx]);
+  var headerIdx = detectHeaderRowIndex(values);
+  if (values.length <= headerIdx + 1) {
+    return {
+      columns: [], records: [], rowCount: 0,
+      sheetName: sheet.getName(), headerRow: headerIdx + 1, derivedKeys: []
+    };
+  }
+
+  var rawHeaders = values[headerIdx];
+  var labels = normalizeHeaders(rawHeaders);
   var keys = uniqueColumnKeys(labels);
+  var primaryIdxs = findPrimaryColumnIndexes(rawHeaders);
+
   var dataRows = values.slice(headerIdx + 1).filter(function (row) {
-    return !isEmptyRow(row);
+    return !isEmptyRow(row) && isDataRow(row, primaryIdxs);
   });
 
   var sampleN = Math.min(dataRows.length, cfg.TYPE_SAMPLE_ROWS);
@@ -226,10 +338,14 @@ function readReport() {
     records[r2] = obj;
   }
 
+  var enriched = deriveBusinessColumns(columns, records);
+
   return {
-    columns: columns,
+    columns: enriched.columns,
     records: records,
     rowCount: records.length,
-    sheetName: sheet.getName()
+    sheetName: sheet.getName(),
+    headerRow: headerIdx + 1,
+    derivedKeys: enriched.derivedKeys
   };
 }

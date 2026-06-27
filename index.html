@@ -18,6 +18,8 @@
         <input id="globalSearch" type="text" placeholder="Tezkor qidiruv...">
       </div>
       <button class="btn ghost" id="resetBtn">Tozalash</button>
+      <button class="btn ghost" id="exportBtn">CSV</button>
+      <button class="btn ghost" id="printBtn">Chop etish</button>
       <button class="btn" id="refreshBtn">Yangilash</button>
     </div>
 
@@ -46,6 +48,7 @@
 
       <main class="main">
         <div class="kpis" id="kpis"></div>
+        <div class="kpis finance" id="financeKpis"></div>
 
         <div class="controls">
           <div class="field">
@@ -75,6 +78,11 @@
           <div class="card"><h2>O'lcham bo'yicha</h2><div id="col" class="chart"></div></div>
           <div class="card wide"><h2>Vaqt bo'yicha trend</h2><div id="line" class="chart"></div></div>
           <div class="card"><h2>Top 10</h2><div id="ranking"></div></div>
+          <div class="card">
+            <h2>Muddat / SLA holati</h2>
+            <div id="slaChart" class="chart" style="height:240px"></div>
+            <div id="slaLegend" class="sla-legend"></div>
+          </div>
           <div class="card">
             <h2>Holat</h2>
             <div id="summary" style="font-size:13px;color:var(--muted);line-height:1.9"></div>

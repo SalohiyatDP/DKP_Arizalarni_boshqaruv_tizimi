@@ -136,4 +136,23 @@ tbody tr:hover { background: #f8fbff; }
   .grid { grid-template-columns: 1fr; }
   .search input { width: 130px; }
 }
+/* finance KPI strip */
+.kpis.finance { margin-top: 12px; }
+.kpis.finance .kpi { border-left-color: #34a853; }
+.kpis.finance .kpi.debt { border-left-color: #c62828; }
+.kpis.finance .kpi.pending { border-left-color: #f9a825; }
+/* SLA legend */
+.sla-legend { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.sla-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink);
+  background: #f6f7f9; border-radius: 14px; padding: 3px 10px; }
+.sla-badge .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.sla-badge .n { font-weight: 600; }
+/* print */
+@media print {
+  .topbar, .sidebar, .controls, .pager, .overlay, .toast-container,
+  #exportBtn, #printBtn, #refreshBtn, #resetBtn { display: none !important; }
+  .body, .main { display: block; overflow: visible; height: auto; }
+  .card { break-inside: avoid; box-shadow: none; border: 1px solid var(--line); }
+  body { background: #fff; }
+}
 </style>

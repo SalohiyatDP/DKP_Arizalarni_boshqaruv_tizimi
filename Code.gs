@@ -178,6 +178,8 @@ function buildQueryResult(data, cls, p) {
   var filtered = applyFilters(data.records, filters);
   var options = getFilterOptions(data.records, dimKeys, filters);
   var kpis = computeKpis(filtered, cls.measures.map(function (c) { return c.key; }));
+  var finance = computeFinanceSummary(filtered);
+  var sla = computeSlaSummary(filtered);
 
   var category = p.groupDim
     ? groupByDimension(filtered, p.groupDim, { agg: p.agg, measureKey: p.measureKey, topN: 12, includeOther: true })
@@ -205,6 +207,8 @@ function buildQueryResult(data, cls, p) {
     options: options,
     filters: echoFilters,
     kpis: kpis,
+    finance: finance,
+    sla: sla,
     category: { dim: p.groupDim, agg: p.agg, measureKey: p.measureKey || null, data: category },
     ranking: { dim: p.groupDim, data: ranking },
     trend: { dateKey: p.dateKey, agg: p.agg, data: trend },
@@ -250,6 +254,7 @@ function apiGetInitialState() {
       dateColumns: cls.dateColumns,
       searchColumns: cls.searchColumns,
       palette: getChartPalette(),
+      sla: getSlaConfig(),
       defaults: defaults,
       query: query
     }));
@@ -270,5 +275,81 @@ function apiRunQuery(payload) {
     return JSON.stringify(successResponse(buildQueryResult(data, cls, normalizePayload(payload, cls))));
   } catch (error) {
     return JSON.stringify(errorResponse('So\'rovni bajarishda xatolik: ' + error.message, error));
+  }
+}
+
+
+/**
+ * Bitta CSV katak qiymatini xavfsiz ekran qilish (RFC 4180).
+ * @param {*} value
+ * @returns {string}
+ */
+function csvEscape(value) {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  var s = String(value);
+  if (/[",\n\r]/.test(s)) {
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+  return s;
+}
+
+/**
+ * Filterlangan yozuvlardan CSV matn tuzish (faqat ko'rinadigan ustunlar).
+ * @param {Array<Object>} columns
+ * @param {Array<Object>} records
+ * @returns {string}
+ */
+function buildCsv(columns, records) {
+  var header = columns.map(function (c) {
+    return csvEscape(c.label);
+  }).join(',');
+  var lines = [header];
+  for (var i = 0; i < records.length; i++) {
+    var row = columns.map(function (c) {
+      return csvEscape(formatCellValue(records[i][c.key], c.type));
+    });
+    lines.push(row.join(','));
+  }
+  return lines.join('\r\n');
+}
+
+/**
+ * Filterlangan natijani CSV sifatida eksport qilish (faqat filtrlangan qatorlar).
+ * Eksport server tomonida tayyorlanadi; mijoz uni faylga yuklab oladi.
+ * @param {Object} payload
+ * @returns {string} JSON { filename, mimeType, content }
+ */
+function apiExportData(payload) {
+  try {
+    var data = readReport();
+    var cls = classifyColumns(data.columns, data.records);
+    var p = normalizePayload(payload, cls);
+
+    var filters = {};
+    Object.keys(p.filters).forEach(function (k) { filters[k] = p.filters[k]; });
+    if (p.search) {
+      var searchCols = cls.searchColumns.concat(cls.dimensions).map(function (c) { return c.key; });
+      filters.__search = { type: 'search', term: p.search, columns: searchCols };
+    }
+
+    var filtered = applyFilters(data.records, filters);
+    var sorted = sortRecords(filtered, p.sortKey, p.sortDir);
+    var max = getReportConfig().MAX_EXPORT_ROWS;
+    if (sorted.length > max) {
+      sorted = sorted.slice(0, max);
+    }
+
+    var csv = buildCsv(data.columns, sorted);
+    var stamp = Utilities.formatDate(new Date(), getSystemConfig().TIMEZONE, 'yyyyMMdd_HHmm');
+    return JSON.stringify(successResponse({
+      filename: 'DKP_hisobot_' + stamp + '.csv',
+      mimeType: 'text/csv;charset=utf-8',
+      rowCount: sorted.length,
+      content: csv
+    }));
+  } catch (error) {
+    return JSON.stringify(errorResponse('Eksport xatosi: ' + error.message, error));
   }
 }
