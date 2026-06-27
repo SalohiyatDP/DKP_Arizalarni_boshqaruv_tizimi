@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DKP Hisobot Tahlili</title>
+  <?!= include('style'); ?>
+</head>
+<body>
+  <div class="app">
+    <div class="topbar">
+      <h1 id="title">DKP Hisobot Tahlili</h1>
+      <span class="meta" id="sheetMeta"></span>
+      <span class="spacer"></span>
+      <div class="search">
+        <span>&#128269;</span>
+        <input id="globalSearch" type="text" placeholder="Tezkor qidiruv...">
+      </div>
+      <button class="btn ghost" id="resetBtn">Tozalash</button>
+      <button class="btn" id="refreshBtn">Yangilash</button>
+    </div>
+
+    <div class="body">
+      <aside class="sidebar">
+        <div class="section">
+          <h3>Sana oralig'i</h3>
+          <div class="field">
+            <label>Sana ustuni</label>
+            <select id="dateColSelect"></select>
+          </div>
+          <div class="row2">
+            <div class="field"><label>Dan</label><input id="dateFrom" type="date"></div>
+            <div class="field"><label>Gacha</label><input id="dateTo" type="date"></div>
+          </div>
+        </div>
+        <div class="section">
+          <h3>Filtrlar</h3>
+          <div id="dimFilters"></div>
+        </div>
+        <div class="section">
+          <h3>Raqamli oraliqlar</h3>
+          <div id="numFilters"></div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="kpis" id="kpis"></div>
+
+        <div class="controls">
+          <div class="field">
+            <label>Guruhlash (o'lcham)</label>
+            <select id="groupDim"></select>
+          </div>
+          <div class="field">
+            <label>Ko'rsatkich</label>
+            <select id="measureKey"></select>
+          </div>
+          <div class="field">
+            <label>Hisoblash</label>
+            <select id="aggKey">
+              <option value="count">Soni</option>
+              <option value="sum">Yig'indi</option>
+              <option value="avg">O'rtacha</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Trend sana ustuni</label>
+            <select id="trendDate"></select>
+          </div>
+        </div>
+
+        <div class="grid">
+          <div class="card"><h2>Taqsimot (ulush)</h2><div id="pie" class="chart"></div></div>
+          <div class="card"><h2>O'lcham bo'yicha</h2><div id="col" class="chart"></div></div>
+          <div class="card wide"><h2>Vaqt bo'yicha trend</h2><div id="line" class="chart"></div></div>
+          <div class="card"><h2>Top 10</h2><div id="ranking"></div></div>
+          <div class="card">
+            <h2>Holat</h2>
+            <div id="summary" style="font-size:13px;color:var(--muted);line-height:1.9"></div>
+          </div>
+          <div class="card wide">
+            <h2>Ma'lumotlar jadvali <span class="pill" id="tableCount"></span></h2>
+            <div class="tablewrap"><table id="dataTable"><thead></thead><tbody></tbody></table></div>
+            <div class="pager">
+              <span id="pageInfo"></span>
+              <button id="prevPage">&#8249; Oldingi</button>
+              <button id="nextPage">Keyingi &#8250;</button>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <div class="overlay" id="overlay"><div class="spinner"></div></div>
+
+  <!-- Google Charts loader -->
+  <script src="https://www.gstatic.com/charts/loader.js"></script>
+
+  <!-- Frontend modullari -->
+  <?!= include('script'); ?>
+</body>
+</html>

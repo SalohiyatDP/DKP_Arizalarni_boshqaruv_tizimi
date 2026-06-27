@@ -1,189 +1,118 @@
 # DKP Hisobot Tahlili
 
-> Bitta **Google Sheets** fayli ichida, **Google Apps Script** bilan integratsiyalashgan tahlil muhiti.
+> Bitta **Google Sheets** fayli + unga **bog'langan (bound) Google Apps Script** loyihasi.
+> Faqat `.gs` va `.html` fayllaridan iborat — klassik Apps Script tuzilmasi.
 
 Tizimning yagona maqsadi — varaqdagi **tayyor hisobot jadvalini** qulay **filterlash** va
 **statistikani** (KPI, grafiklar, reyting, jadval) ko'rsatuvchi interfeys taqdim etish.
-
-Hisobot ustunlari **avtomatik aniqlanadi** (qat'iy sxema yo'q), shuning uchun tizim deyarli
-istalgan ustunli tayyor hisobot bilan ishlaydi.
+Hisobot ustunlari **avtomatik aniqlanadi** (qat'iy sxema yo'q).
 
 ---
 
-## Mundarija
+## Fayllar tuzilmasi
 
-- [Qanday ishlaydi](#qanday-ishlaydi)
-- [Imkoniyatlar](#imkoniyatlar)
-- [Arxitektura](#arxitektura)
-- [Loyiha tuzilmasi](#loyiha-tuzilmasi)
-- [Ustunlarni avtomatik aniqlash](#ustunlarni-avtomatik-aniqlash)
-- [O'rnatish (Apps Script + Google Sheets)](#ornatish-apps-script--google-sheets)
-- [Sozlash](#sozlash)
-- [Lokal ishlab chiqish (lint va test)](#lokal-ishlab-chiqish-lint-va-test)
-- [Optimizatsiya](#optimizatsiya)
+Loyiha to'liq **flat** (papkasiz) — Apps Script muharririga to'g'ridan-to'g'ri mos:
+
+| Fayl | Turi | Vazifa |
+|------|------|--------|
+| `Code.gs` | server | `doGet` (web app), `onOpen` (menyu), `include`, API endpointlar (`apiGetInitialState`, `apiRunQuery`) |
+| `Config.gs` | server | Tizim/hisobot/SLA/kalendar sozlamalari (funksiya getterlar) |
+| `Utils.gs` | server | `successResponse`/`errorResponse`, `escapeHtml`, `sanitizeText`, formatlash |
+| `WorkingDays.gs` | server | Ish-kuni kalendari (shanba/yakshanba + bayramlar hisobga olinmaydi) |
+| `Report.gs` | server | Hisobotni dinamik o'qish + ustun turlarini aniqlash/tasniflash |
+| `Filter.gs` | server | Server tomonidagi filterlash + cascading variantlar |
+| `Statistics.gs` | server | KPI, group-by, top-N, oylik trend |
+| `index.html` | client | Sahifa karkasi (`include('style')`, `include('script')`) |
+| `style.html` | client | CSS stillari |
+| `script.html` | client | Frontend modullari (Loading, Toast, API, Dashboard) |
+
+> `.gs` fayllari Apps Script'da **bitta global scope**ga birlashadi — barcha funksiyalar
+> global. `<?!= include('...') ?>` template pattern orqali CSS va JS bosh sahifaga qo'shiladi.
 
 ---
 
 ## Qanday ishlaydi
 
-1. Apps Script loyihasi Google Sheets fayliga **bog'langan (bound)**.
-2. Faylni ochganda menyuga **📊 DKP Tahlil → Tahlil panelini ochish** qo'shiladi.
-3. Panel (modal dialog) ochiladi: server hisobot varag'ini **bir marta o'qiydi**, ustun turlarini
-   aniqlaydi va filterlash uchun interfeys quradi.
-4. Foydalanuvchi filterlaydi/qidiradi → server **server tomonida** filterlab, statistika va
-   grafiklar uchun ma'lumotni qaytaradi.
+1. Apps Script loyihasi Google Sheets fayliga **bog'langan**.
+2. Faylni ochganda menyuga **DKP Tahlil → Tahlil panelini ochish** qo'shiladi (dialog),
+   yoki loyiha **Web App** sifatida deploy qilinadi (`doGet`).
+3. Interfeys server'dan hisobotni **bir marta** o'qiydi, ustun turlarini aniqlaydi va filtrlarni quradi.
+4. Foydalanuvchi filterlaydi/qidiradi → `google.script.run` orqali `apiRunQuery` chaqiriladi,
+   server **server tomonida** filterlab, statistika va grafik ma'lumotini JSON ko'rinishda qaytaradi.
 
 ```
-  Google Sheets (tayyor hisobot)
-        │  (bound)
-        ▼
-  Apps Script  ──onOpen──▶  Menyu  ──▶  Modal dialog (Index.html)
-        │                                     │  google.script.run
-        └────────── server API ◀──────────────┘
-           getInitialState() / runQuery(payload)
+  Google Sheets (tayyor hisobot)  ──bound──▶  Apps Script (.gs)
+        ▲                                          │
+        │  index.html + style.html + script.html   │
+        └────── google.script.run (apiXxx → JSON) ──┘
 ```
 
 ---
 
 ## Imkoniyatlar
 
-- **Cascading filterlar** — har bir kategoriya ustuni uchun ko'p tanlovli (checkbox) dropdown;
-  variantlar boshqa faol filterlarga moslab yangilanadi.
-- **Sana oralig'i** filtri (ixtiyoriy sana ustuni bo'yicha).
-- **Raqamli oraliq** (min/max) filtrlari har bir raqamli ustun uchun.
+- **Cascading filterlar** — har bir kategoriya ustuni uchun ko'p tanlovli (checkbox) dropdown.
+- **Sana oralig'i** va **raqamli oraliq (min/max)** filtrlari.
 - **Tezkor global qidiruv** (debounce bilan).
-- **KPI kartalar** — jami yozuvlar va har bir raqamli ustun bo'yicha yig'indi/o'rtacha.
-- **Grafiklar** (Google Charts): doiraviy (ulush), ustunli (o'lcham bo'yicha), maydon/chiziqli (trend).
-- **Top 10 reyting** tanlangan o'lcham bo'yicha.
-- **Sahifalangan, saralanadigan jadval** (server-side pagination & sort).
-- **Material dizayn**, responsive layout, loading animatsiya.
+- **KPI kartalar**, **Google Charts** (doiraviy, ustunli, trend), **Top 10** reyting.
+- **Sahifalanadigan, saralanadigan jadval** (server-side).
+- Material uslubidagi, responsive interfeys; loading va toast.
 
 ---
 
-## Arxitektura
+## O'rnatish
 
-Qatlamli, qat'iy bog'liqlik yo'nalishi bilan. Barcha hisob-kitob **server tomonida** (JavaScript),
-Google Sheets ichida **formula ishlatilmaydi**.
+### A) Tezkor (nusxa ko'chirish)
+1. Google Sheets faylini oching (1-qator — sarlavhalar bo'lgan tayyor hisobot).
+2. **Extensions → Apps Script**.
+3. Har bir `.gs` va `.html` faylni muharrirda yarating va ushbu repodagi mazmunni nusxa qiling
+   (`.html` fayllar uchun: **File → New → HTML**, nomini `index`, `style`, `script` qiling).
+4. Saqlang.
 
-| Qatlam | Fayl | Vazifa |
-|--------|------|--------|
-| **Config** | `src/config/Config.js` | Deep-frozen `CONFIG` — yagona konfiguratsiya manbai |
-| **Utils** | `src/utils/DateUtils.js`, `Validator.js` | Ish-kuni kalendari, input validatsiya (sof funksiyalar) |
-| **Repository** | `src/repository/Database.js`, `ReportRepository.js` | Bound spreadsheet + hisobotni dinamik o'qish/turlarni aniqlash |
-| **Service** | `src/services/FilterService.js`, `StatisticsService.js` | Server-side filterlash va agregatsiya (sof funksiyalar) |
-| **Controller** | `src/Code.js` | `onOpen`, dialog, server API (`getInitialState`, `runQuery`) |
-| **UI** | `Index.html` | Filtrlar + KPI + grafiklar + jadval (HtmlService) |
-
-> Sof mantiqiy modullar (kalendar, filter, statistika, ustun aniqlash) Node muhitida **unit test**
-> qilinadi; har bir server fayli `typeof module` himoyasiga ega.
-
----
-
-## Loyiha tuzilmasi
-
-```
-DKP_Arizalarni_boshqaruv_tizimi/
-├── appsscript.json              # Apps Script manifesti (V8, Asia/Tashkent)
-├── .clasp.json.example          # clasp konfiguratsiyasi namunasi
-├── eslint.config.js             # ESLint (flat config)
-├── package.json                 # lint/test/push skriptlari
-├── Index.html                   # Dashboard UI (filtrlar + statistika)
-│
-├── src/
-│   ├── Code.js                  # Controller: menyu, dialog, server API
-│   ├── config/
-│   │   └── Config.js            # CONFIG — konstanta va parametrlar
-│   ├── utils/
-│   │   ├── DateUtils.js         # Ish-kuni kalendari (SLA/sana mantiqi)
-│   │   └── Validator.js         # Input validatsiya
-│   ├── repository/
-│   │   ├── Database.js          # Bound (aktiv) spreadsheet kirish
-│   │   └── ReportRepository.js  # Hisobotni dinamik o'qish + turlarni aniqlash
-│   └── services/
-│       ├── FilterService.js     # Server-side filterlash (cascading)
-│       └── StatisticsService.js # KPI, group-by, top-N, time series
-│
-└── test/                        # Node unit testlar (sof mantiq)
-    ├── dateutils.test.js
-    ├── validator.test.js
-    ├── reportrepository.test.js
-    ├── filterservice.test.js
-    └── statisticsservice.test.js
-```
-
----
-
-## Ustunlarni avtomatik aniqlash
-
-`ReportRepository` hisobot varag'ining birinchi qatorini sarlavha sifatida oladi va har bir
-ustunning turini **qiymatlarni namuna olish** orqali aniqlaydi:
-
-- **number** → KPI va agregatsiya uchun *ko'rsatkich (measure)*;
-- **date** → trend grafigi va sana oralig'i filtri uchun;
-- **string** → *o'lcham (dimension)*:
-  - agar noyob qiymatlar soni `MAX_DIMENSION_CARDINALITY` dan kam bo'lsa → filtr dropdown;
-  - aks holda → faqat global qidiruvga kiradi.
-
-Shuning uchun maxsus sxema talab qilinmaydi — ustunlar o'zgarsa ham tizim moslashadi.
-
----
-
-## O'rnatish (Apps Script + Google Sheets)
-
-### 1. Talablar
-- [Node.js](https://nodejs.org/) (lokal lint/test uchun)
-- [clasp](https://github.com/google/clasp): `npm install -g @google/clasp`
-
-### 2. Hisobot faylini tayyorlash
-Tayyor hisobot jadvali joylashgan Google Sheets faylini oching (1-qator — sarlavhalar).
-
-### 3. Bog'langan Apps Script loyihasini ulash
-Sheets ichida **Extensions → Apps Script** orqali bound loyiha oching va uning `scriptId` sini oling
-(Project Settings’dan). So'ng:
-
+### B) clasp orqali
 ```bash
-cp .clasp.json.example .clasp.json
-# .clasp.json ichidagi scriptId ni bound loyihangiznikiga almashtiring
-clasp push        # yoki: npm run push
+npm install -g @google/clasp
+clasp login
+# Sheets ichidagi bound loyihaning scriptId sini Project Settings'dan oling
+clasp clone <SCRIPT_ID>
+# fayllarni shu repodagilar bilan almashtiring
+clasp push
 ```
 
-### 4. Ishga tushirish
-Sheets faylini qayta yuklang → menyuda **📊 DKP Tahlil → Tahlil panelini ochish**.
+### Ishga tushirish
+- **Varaq ichida:** faylni qayta yuklang → **DKP Tahlil → Tahlil panelini ochish**.
+- **Web App:** **Deploy → New deployment → Web app** (Execute as: *Me*, Access: kerakli darajada) → URL ochiladi.
 
 ---
 
 ## Sozlash
 
-Asosiy sozlamalar `src/config/Config.js` → `CONFIG` ichida:
+Asosiy sozlamalar `Config.gs` ichida (funksiya getterlar):
 
-| Sozlama | Tavsifi |
-|---------|---------|
-| `REPORT.SHEET_NAME` | Hisobot varag'i nomi. `''` bo'lsa — **aktiv varaq** ishlatiladi |
-| `REPORT.HEADER_ROW` | Sarlavha qatori raqami (standart: 1) |
-| `REPORT.TYPE_SAMPLE_ROWS` | Tur aniqlash uchun namuna olinadigan qatorlar soni |
-| `REPORT.MAX_DIMENSION_CARDINALITY` | Ustun dropdownga aylanishi uchun maks. noyob qiymatlar |
-| `PERFORMANCE.PAGE_SIZE` | Jadval sahifasidagi yozuvlar soni |
-| `UI.DIALOG_WIDTH/HEIGHT` | Dialog o'lchami |
-| `SLA.*`, `CALENDAR.*` | SLA ranglari va ish-kuni qoidalari (ixtiyoriy tahlil uchun) |
-
----
-
-## Lokal ishlab chiqish (lint va test)
-
-```bash
-npm run lint    # ESLint
-npm test        # Node unit testlar
-```
-
-Joriy holatda **34 ta test** mavjud va barchasi o'tadi; ESLint **0 ta muammo** qaytaradi.
+| Funksiya / kalit | Tavsifi |
+|------------------|---------|
+| `getReportConfig().SHEET_NAME` | Hisobot varag'i nomi. `''` bo'lsa — **aktiv varaq** |
+| `getReportConfig().HEADER_ROW` | Sarlavha qatori (standart: 1) |
+| `getReportConfig().MAX_DIMENSION_CARDINALITY` | Ustun dropdownga aylanishi uchun maks. noyob qiymatlar |
+| `getReportConfig().PAGE_SIZE` | Jadval sahifasidagi yozuvlar |
+| `getSystemConfig()` | Nom, sarlavha, vaqt mintaqasi, sana formati |
+| `getChartPalette()`, `getSlaConfig()` | Grafik ranglari va SLA chegaralari |
 
 ---
 
-## Optimizatsiya
+## Ustunlarni avtomatik aniqlash
 
-- Hisobot **bitta `getValues()`** chaqirig'i bilan o'qiladi (50 000+ qator uchun mos).
-- Filterlash, agregatsiya va saralash **in-memory** `Map`/massivlar bilan bajariladi
-  (Google Sheets formulalarisiz).
-- Jadval **server-side pagination** orqali sahifalanadi — katta natijalar brauzerga to'liq yuborilmaydi.
-- Qidiruv **debounce** bilan; dialog uchun ma'lumotlar faqat kerakli hajmda uzatiladi.
-- `LockService` orqali bir vaqtdagi murojaatlar tartibga solinadi.
+`Report.gs` birinchi qatorni sarlavha sifatida oladi va har bir ustun turini namuna olib aniqlaydi:
+- **number** → KPI/agregatsiya uchun *ko'rsatkich*;
+- **date** → trend va sana oralig'i filtri;
+- **string** → *o'lcham*: noyob qiymatlar kam bo'lsa → filtr dropdown, aks holda global qidiruvga kiradi.
+
+Shu sababli maxsus sxema talab qilinmaydi — ustunlar o'zgarsa ham tizim moslashadi.
+
+---
+
+## Eslatma
+
+Barcha hisob-kitob **server tomonida JavaScript**da bajariladi; Google Sheets ichida formula
+ishlatilmaydi. Hisobot **bitta `getValues()`** bilan o'qiladi, filtr/agregatsiya in-memory
+amalga oshadi, jadval esa server-side sahifalanadi — bu katta hajmli hisobotlarda ham barqaror ishlash uchun.
